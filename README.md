@@ -45,13 +45,17 @@ pip install -r requirements.txt
 
 ## Usage
 
-To use the Ollama Translator, navigate to the directory containing `ollama-translator.py` and execute the following command:
+This project can be used as a command-line tool or through a graphical user interface (GUI).
+
+### Command-Line Usage
+
+To use the Ollama Translator from the command line, navigate to the directory containing `ollama_translator.py` and execute the following command:
 
 ```bash
-python ollama-translator.py --base-lang [base_language_code] --target-lang [target_language_code] --input-dir [input_directory] [--output-dir [output_directory]] [--recursive]
+python ollama_translator.py --base-lang [base_language_code] --target-lang [target_language_code] --input-dir [input_directory] [--output-dir [output_directory]] [--recursive]
 ```
 
-### Command-Line Arguments
+**Command-Line Arguments**
 
 - `--base-lang`: The base language code of the Markdown files to translate from. Default is 'en'.
 - `--target-lang`: The target language code to translate to. This argument is required.
@@ -60,20 +64,30 @@ python ollama-translator.py --base-lang [base_language_code] --target-lang [targ
 - `--output-dir`: The path to the directory where the output files will be saved. If not provided, files will be saved next to the originals.
 - `--output-origin`: If set, saves the output files in the same directory as the source files.
 
+### GUI Usage
+
+For a more visual experience, you can use the graphical user interface. To launch the GUI, run the following command:
+
+```bash
+python ollama-translator-gui.py
+```
+
+The GUI provides an easy-to-use interface for selecting languages, directories, and other options.
+
 ## Examples
 
 ### Basic Example
 Translate all Markdown files from English to Spanish within a specific directory, including subdirectories:
 
 ```bash
-python ollama-translator.py --base-lang en --target-lang es --input-dir /path/to/input --output-dir /path/to/output --recursive
+python ollama_translator.py --base-lang en --target-lang es --input-dir /path/to/input --output-dir /path/to/output --recursive
 ```
 
 ### Multilingual Example
 Translate from Simplified Chinese to English, recursively processing all subdirectories:
 
 ```bash
-python ollama-translator.py --base-lang zh-CN --target-lang en --input-dir /path/to/input --output-dir /path/to/output --recursive
+python ollama_translator.py --base-lang zh-CN --target-lang en --input-dir /path/to/input --output-dir /path/to/output --recursive
 ```
 
 ## Error Handling
