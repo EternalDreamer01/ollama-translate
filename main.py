@@ -1,77 +1,215 @@
 #!/usr/bin/python3
 ################################################################################
-# @file      main.py
-# @brief     
-# @date      Mo Jun 2026
-# @author    Dimitri Simon
-# 
+# @file	  main.py
+# @brief	 Edit all ODT paragraphs in-place by applying a transform function
+# @date	  Mo Jun 2026
+# @author	Dimitri Simon
+#
 # PROJECT:   ollama-translator
-# 
+#
 # MODIFIED:  Mon Jun 15 2026
-# BY:        Dimitri Simon
-# 
+# BY:		Dimitri Simon
+#
 # Copyright (c) 2026 Dimitri Simon
-# 
+#
 ################################################################################
 
 from lxml import etree
+import argparse
 import zipfile
 import sys
+import tempfile
+import shutil
+import os
+import time
+import ollama
+import re
+from lang import lang_dict
+from rich.progress import track
+from pathlib import Path
+
+LLM_MODEL_DEFAULT = "translategemma:4b"
 
 NS = {'text': 'urn:oasis:names:tc:opendocument:xmlns:text:1.0'}
+TEXT_NS = NS['text']
+LINE_BREAK_TAG = '{%s}line-break' % TEXT_NS
 
-def replace_paragraph_by_index(path, idx, new_text):
-    with zipfile.ZipFile(path, 'r') as z:
-        content = z.read('content.xml')
-        others = {n: z.read(n) for n in z.namelist() if n != 'content.xml'}
-    root = etree.fromstring(content)
-    paras = root.findall('.//text:p', NS) + root.findall('.//text:h', NS)
-    if idx < 0 or idx >= len(paras):
-        raise IndexError('paragraph index out of range')
-    p = paras[idx]
-    # remove all children, set text (keeps tag and attributes)
-    for c in list(p):
-        p.remove(c)
-    p.text = new_text
-    new_content = etree.tostring(root, xml_declaration=True, encoding='UTF-8')
-    # write back same as above (create temp zip and move)
-    # ... (reuse writing code from first function)
+def _set_mixed_text(el, text):
+	"""
+	Replace element contents with text, converting newlines to <text:line-break/>
+	and preserving element tag/attributes.
+	"""
+	# remove existing children
+	for c in list(el):
+		el.remove(c)
+	if not text:
+		el.text = None
+		return
+	parts = text.split('\n')
+	el.text = parts[0] if parts else None
+	for part in parts[1:]:
+		lb = etree.Element(LINE_BREAK_TAG, nsmap={})
+		el.append(lb)
+		# text after the line-break
+		if part:
+			# set tail on line-break element for the following text
+			lb.tail = part
 
+def edit_paragraphs_inplace(path, transform_fn):
+	"""
+	Open ODT/ODP (zip) at `path`, apply transform_fn(original_text) to every
+	paragraph (<text:p>) and heading (<text:h>), and write changes back
+	in-place (atomic replace).
+	transform_fn: callable that accepts a single string and returns a string.
+	"""
+	# read archive contents
+	with zipfile.ZipFile(path, 'r') as z:
+		names = z.namelist()
+		if 'content.xml' not in names:
+			raise ValueError('content.xml not found in archive')
+		content = z.read('content.xml')
+		other_files = {name: z.read(name) for name in names if name != 'content.xml'}
+
+	# parse XML
+	root = etree.fromstring(content)
+
+	# find paragraphs and headings (elements themselves)
+	paras = root.findall('.//text:p', NS) + root.findall('.//text:h', NS)
+	reg_text = re.compile(r"^([a-z]|[\d \+]+|[\w\-\.]+@([\w-]+\.)+[\w-]{2,}|(GitHub|LinkedIn):?\s*https?:\/\/[-a-zA-Z0-9@%._\+~#=]{1,256}\.[a-z]{2,128}\b[-a-zA-Z0-9@:%_\+.~#?&\/\/=]*)$")
+
+	# helper to extract inner text similarly to odt_paragraphs
+	def paragraph_text(el):
+		parts = []
+		for node in el.iter():
+			if node.text:
+				parts.append(node.text)
+			if node.tag == LINE_BREAK_TAG:
+				parts.append('\n')
+			if node.tail:
+				parts.append(node.tail)
+		return ''.join(parts)
+
+	def clean_text(rgx_list, text):
+		new_text = text
+		for rgx_match in rgx_list:
+			new_text = re.sub(rgx_match, '', new_text, flags=re.UNICODE)
+		return new_text
+
+	regex_clean = [
+		r"[\w_\-\.]+@([\w\-]+\.)+[\w\-]{2,}",	# email
+		r"(https://[^ ]{3,}|[^ ]+\.com\/?[^ ]*)", # url
+		r"[$&+,:;=?@#|'<>.^*()%!\-\u2013\u2014]",			# special character
+		r"[\d \+]+",							# number
+		r"[A-Z]{3,}",							# name in capital
+		r"(GitHub|GitLab|LinkedIn|Facebook|Reddit|Quora|StackOverflow)" # sites
+	]
+
+	# apply transformation to each paragraph element in-place
+	for p in track(paras):
+		orig = paragraph_text(p).strip()
+		if orig and clean_text(regex_clean, orig).strip():
+			print(orig)
+			new = transform_fn(orig)
+			# ensure string
+			if new is None:
+				new = ''
+			_set_mixed_text(p, str(new))
+
+	# serialize modified content.xml
+	new_content = etree.tostring(root, xml_declaration=True, encoding='UTF-8', standalone=False)
+
+	# write to a temporary zip then replace original (atomic where possible)
+	tmp_fd, tmp_path = tempfile.mkstemp(suffix='.zip')
+	os.close(tmp_fd)
+	try:
+		with zipfile.ZipFile(tmp_path, 'w', compression=zipfile.ZIP_DEFLATED) as z:
+			# write modified content.xml first (preserve name)
+			z.writestr('content.xml', new_content)
+			# write back other files preserving original names
+			for name, data in other_files.items():
+				z.writestr(name, data)
+		# replace original file
+		shutil.move(tmp_path, path)
+	finally:
+		if os.path.exists(tmp_path):
+			os.remove(tmp_path)
 
 def odt_paragraphs(path):
-    with zipfile.ZipFile(path) as z:
-        content = z.read('content.xml')
-    root = etree.fromstring(content)
+	with zipfile.ZipFile(path) as z:
+		content = z.read('content.xml')
+	root = etree.fromstring(content)
 
-    def paragraph_text(el):
-        parts = []
-        for node in el.iter():
-            # element text
-            if node.text:
-                parts.append(node.text)
-            # explicit ODf line-break element -> newline
-            if node.tag == '{%s}line-break' % NS['text']:
-                parts.append('\n')
-            # tail text (text after this node)
-            if node.tail:
-                parts.append(node.tail)
-        return ''.join(parts)
+	def paragraph_text(el):
+		parts = []
+		for node in el.iter():
+			if node.text:
+				parts.append(node.text)
+			if node.tag == LINE_BREAK_TAG:
+				parts.append('\n')
+			if node.tail:
+				parts.append(node.tail)
+		return ''.join(parts)
 
-    # collect paragraphs and headings
-    paras = []
-    for tag in ('text:p', 'text:h'):
-        for p in root.findall('.//'+tag, NS):
-            paras.append(paragraph_text(p))
-    return paras
+	paras = []
+	for tag in ('text:p', 'text:h'):
+		for p in root.findall('.//'+tag, NS):
+			paras.append(paragraph_text(p))
+	return paras
 
-paras = odt_paragraphs(sys.argv[1])
-text = '\n'.join(p.strip() for p in paras if p.strip())  # join paragraphs with blank line
-print(text)
+if __name__ == '__main__':
+	def validation_lang(lang: str):
+		if not lang in lang_dict:
+			raise argparse.ArgumentTypeError(f"Language '{lang}' isn't valid")
+		return lang
 
-# print(doc.content) #.get_sheet(0)
+	parser = argparse.ArgumentParser(
+		description="Translate LibreOffice file using a local Ollama model",
+		epilog="Available languages (shorten):\n  "+ ", ".join(f"{k} ({v})" for k, v in lang_dict.items()))
+	parser.add_argument('output_lang', nargs=1, type=validation_lang, help='target language to translate')
+	parser.add_argument('input_file', nargs=1, type=lambda x: Path(x).resolve(strict=True), help='file to translate')
+	parser.add_argument('-i', '--input-lang', dest='input_lang', default="en", type=validation_lang, help='The base language to translate from')
+	parser.add_argument('-o', '--output-file', default="out.odt", dest="output_file", type=str, help='The target language to translate')
+	parser.add_argument('--target-lang', metavar='target_lang', type=str, help='The target language to translate to. Choose from: ' + ', '.join(lang_dict.keys()))
+	args = parser.parse_args()
 
+	args.output_lang = args.output_lang[0]
+	args.input_file = args.input_file[0]
+	# print(args)
 
-# print(f"Value of A1: {sheet.get_cell('A1').value}")
-# sheet.set_value('B2', 'Updated Value')
+	def translate_full(full_text: str) -> str:
+		system_prompt = """
+You are a professional {SOURCE_LANG} ({SOURCE_CODE}) to {TARGET_LANG} ({TARGET_CODE}) translator. Your goal is to accurately convey the meaning and nuances of the original {SOURCE_LANG} text while adhering to {TARGET_LANG} grammar, vocabulary, and cultural sensitivities.
+Produce only the {TARGET_LANG} translation, without any additional explanations or commentary. Please translate the following {SOURCE_LANG} text into {TARGET_LANG}:
+""" \
+		.format(
+			SOURCE_LANG=lang_dict.get(args.input_lang, args.input_lang),
+			SOURCE_CODE=args.input_lang,
+			TARGET_LANG=lang_dict.get(args.output_lang, args.output_lang),
+			TARGET_CODE=args.output_lang,
+			TEXT=full_text
+		)
+		
+		messages = [
+			{"role": "system", "content": system_prompt},
+			{"role": "user", "content": full_text}
+		]
 
-# doc.save('modified_spreadsheet.ods')
+		# start_time = time.time()
+
+		response = ollama.chat(
+			model=LLM_MODEL_DEFAULT,
+			messages=messages
+		)
+		# elapsed_time = time.time() - start_time
+		return response['message']['content']
+
+	# Apply transform in-place
+	try:
+		edit_paragraphs_inplace(args.input_file, translate_full)
+
+		# Print joined non-empty paragraphs (same behavior as original)
+		paras = odt_paragraphs(args.input_file)
+		text = '\n'.join(p.strip() for p in paras if p.strip())
+		print(text)
+	except KeyboardInterrupt:
+		pass
