@@ -180,9 +180,11 @@ if __name__ == '__main__':
 	)
 	parser.add_argument('output_lang', nargs=1, type=validation_lang, help='target language')
 	parser.add_argument('input_file', nargs=1, type=lambda x: Path(x).resolve(strict=True), help='file to translate')
-	parser.add_argument('-i', '--input-lang', dest='input_lang', default="en", type=validation_lang, help='The base language to translate from')
+	group_input_language = parser.add_mutually_exclusive_group()
+	group_input_language.add_argument('-i', '--input-lang', dest='input_lang', type=validation_lang, help='The base language to translate from')
+	group_input_language.add_argument('-a', '--agnostic', action="store_true", help="language agnostic translate (default)")
+
 	parser.add_argument('-o', '--output-file', default="out.odt", dest="output_file", type=str, help='The output file translated')
-	# parser.add_argument('--multiple', help="different languages in input file")
 	parser.add_argument('-p', '--parameters', choices=[4, 12, 27], type=int, default=LLM_MODEL_PARAMETERS_DEFAULT, help="size of model's parameters (billion)")
 	parser.add_argument('--prompt', choices=["fast", "balance", "accurate"], type=str, default="fast", help="type of prompt")
 	parser.add_argument('-l', '--languages', action="store_true", help="list languages (shorten)")
@@ -207,8 +209,10 @@ if __name__ == '__main__':
 	args.input_file = args.input_file[0]
 	# print(args)
 
+	prompt = PROMPT["accurate_any" if args.agnostic or not args.input_lang else args.prompt]
+
 	def translate_full(full_text: str) -> str:
-		system_prompt = PROMPT[args.prompt] \
+		system_prompt = PROMPT["accurate_any" if args.agnostic else args.prompt] \
 		.format(
 			SOURCE_LANG=lang_dict.get(args.input_lang, args.input_lang),
 			SOURCE_CODE=args.input_lang,
