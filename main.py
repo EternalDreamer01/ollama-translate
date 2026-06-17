@@ -218,18 +218,15 @@ if __name__ == '__main__':
 
 	# print(args)
 
-	prompt = PROMPT["accurate_any" if args.agnostic or not args.input_lang else args.prompt]
-
-	def translate_full(full_text: str) -> str:
-		system_prompt = PROMPT["accurate_any" if args.agnostic else args.prompt] \
+	system_prompt = PROMPT["accurate_any" if args.agnostic or not args.input_lang else args.prompt] \
 		.format(
 			SOURCE_LANG=lang_dict.get(args.input_lang, args.input_lang),
 			SOURCE_CODE=args.input_lang,
 			TARGET_LANG=lang_dict.get(args.output_lang, args.output_lang),
 			TARGET_CODE=args.output_lang,
-			TEXT=full_text
 		)
-		
+
+	def translate_full(full_text: str) -> str:
 		messages = [
 			{"role": "system", "content": system_prompt},
 			{"role": "user", "content": full_text}
