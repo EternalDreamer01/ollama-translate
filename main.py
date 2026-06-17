@@ -5,7 +5,7 @@
 # @date	  Mo Jun 2026
 # @author	Dimitri Simon
 #
-# PROJECT:   ollama-translator
+# PROJECT:   ollama-translate
 #
 # MODIFIED:  Mon Jun 15 2026
 # BY:		Dimitri Simon
@@ -15,20 +15,16 @@
 ################################################################################
 
 from lxml import etree
-import argparse
-import zipfile
-import sys
-import tempfile
-import shutil
-import os
-import time
-import ollama
-import re
+import argparse, zipfile, sys, os, colorama, tempfile, shutil, time, datetime, ollama, re
 from lang import lang_dict
 from rich.progress import track
 from pathlib import Path
+from time import localtime, strftime
+from prompt import PROMPT
+from colorama import Fore, Style
 
-LLM_MODEL_DEFAULT = "translategemma:4b"
+LLM_MODEL = "translategemma"
+LLM_MODEL_PARAMETERS_DEFAULT = 4
 
 NS = {'text': 'urn:oasis:names:tc:opendocument:xmlns:text:1.0'}
 TEXT_NS = NS['text']
@@ -108,8 +104,9 @@ def edit_paragraphs_inplace(path, transform_fn):
 	for p in track(paras):
 		orig = paragraph_text(p).strip()
 		if orig and clean_text(regex_clean, orig).strip():
-			print(orig)
+			print(f"\n\x1b[37m{orig}\x1b[0m")
 			new = transform_fn(orig)
+			print(new)
 			# ensure string
 			if new is None:
 				new = ''
@@ -162,25 +159,56 @@ if __name__ == '__main__':
 			raise argparse.ArgumentTypeError(f"Language '{lang}' isn't valid")
 		return lang
 
+	def show_langs(shorten: bool=True) -> str:
+		l = [f"{k} ({v})" for k, v in lang_dict.items() if not shorten or len(k) == 2]
+		txt_langs = ""
+		def get_nth(index: int) -> str:
+			return l[index] if index < len(l) else ""
+
+		ELEMENTS_ONELINE = 5
+		# print(' '.join(['%-18s' for _ in range(ELEMENTS_ONELINE)]))
+		# print(tuple(get_nth(j) for j in range(ELEMENTS_ONELINE)))
+
+		for i in range(0, len(l), ELEMENTS_ONELINE):
+			txt_langs += f"  {' '.join(['%-18s' for _ in range(ELEMENTS_ONELINE)])}\n" % tuple(get_nth(i+j) for j in range(ELEMENTS_ONELINE))
+		return txt_langs
+
 	parser = argparse.ArgumentParser(
 		description="Translate LibreOffice file using a local Ollama model",
-		epilog="Available languages (shorten):\n  "+ ", ".join(f"{k} ({v})" for k, v in lang_dict.items()))
-	parser.add_argument('output_lang', nargs=1, type=validation_lang, help='target language to translate')
+		epilog="Default model: "+f"{LLM_MODEL}:{LLM_MODEL_PARAMETERS_DEFAULT}b",
+		# formatter_class=argparse.RawDescriptionHelpFormatter
+	)
+	parser.add_argument('output_lang', nargs=1, type=validation_lang, help='target language')
 	parser.add_argument('input_file', nargs=1, type=lambda x: Path(x).resolve(strict=True), help='file to translate')
 	parser.add_argument('-i', '--input-lang', dest='input_lang', default="en", type=validation_lang, help='The base language to translate from')
-	parser.add_argument('-o', '--output-file', default="out.odt", dest="output_file", type=str, help='The target language to translate')
-	parser.add_argument('--target-lang', metavar='target_lang', type=str, help='The target language to translate to. Choose from: ' + ', '.join(lang_dict.keys()))
+	parser.add_argument('-o', '--output-file', default="out.odt", dest="output_file", type=str, help='The output file translated')
+	# parser.add_argument('--multiple', help="different languages in input file")
+	parser.add_argument('-p', '--parameters', choices=[4, 12, 27], type=int, default=LLM_MODEL_PARAMETERS_DEFAULT, help="size of model's parameters (billion)")
+	parser.add_argument('--prompt', choices=["fast", "balance", "accurate"], type=str, default="fast", help="type of prompt")
+	parser.add_argument('-l', '--languages', action="store_true", help="list languages (shorten)")
+	parser.add_argument('-ll', '--languages-full', action="store_true", help="list languages (full)")
 	args = parser.parse_args()
+
+	# print(args)
+	if args.languages:
+		print(show_langs())
+		sys.exit(0)
+	elif args.languages_full:
+		print(show_langs(False))
+		sys.exit(0)
+
+	params = args.parameters
+	try:
+		ollama.show(f"{LLM_MODEL}:{params}b")
+	except ollama.ResponseError:
+		ollama.pull(f"{LLM_MODEL}:{params}b")
 
 	args.output_lang = args.output_lang[0]
 	args.input_file = args.input_file[0]
 	# print(args)
 
 	def translate_full(full_text: str) -> str:
-		system_prompt = """
-You are a professional {SOURCE_LANG} ({SOURCE_CODE}) to {TARGET_LANG} ({TARGET_CODE}) translator. Your goal is to accurately convey the meaning and nuances of the original {SOURCE_LANG} text while adhering to {TARGET_LANG} grammar, vocabulary, and cultural sensitivities.
-Produce only the {TARGET_LANG} translation, without any additional explanations or commentary. Please translate the following {SOURCE_LANG} text into {TARGET_LANG}:
-""" \
+		system_prompt = PROMPT[args.prompt] \
 		.format(
 			SOURCE_LANG=lang_dict.get(args.input_lang, args.input_lang),
 			SOURCE_CODE=args.input_lang,
@@ -197,14 +225,16 @@ Produce only the {TARGET_LANG} translation, without any additional explanations 
 		# start_time = time.time()
 
 		response = ollama.chat(
-			model=LLM_MODEL_DEFAULT,
+			model=f"{LLM_MODEL}:{params}b",
 			messages=messages
 		)
 		# elapsed_time = time.time() - start_time
 		return response['message']['content']
 
 	# Apply transform in-place
+	start_time = time.time()
 	try:
+		print(strftime("%Y-%m-%d %H:%M:%S", localtime()))
 		edit_paragraphs_inplace(args.input_file, translate_full)
 
 		# Print joined non-empty paragraphs (same behavior as original)
@@ -213,3 +243,7 @@ Produce only the {TARGET_LANG} translation, without any additional explanations 
 		print(text)
 	except KeyboardInterrupt:
 		pass
+
+	print()
+	print(strftime("%Y-%m-%d %H:%M:%S", localtime()))
+	print("Elapsed time: ", str(datetime.timedelta(seconds=int(time.time() - start_time))))
