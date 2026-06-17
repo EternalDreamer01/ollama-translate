@@ -176,7 +176,7 @@ if __name__ == '__main__':
 	parser = argparse.ArgumentParser(
 		description="Translate LibreOffice file using a local Ollama model",
 		epilog="Default model: "+f"{LLM_MODEL}:{LLM_MODEL_PARAMETERS_DEFAULT}b",
-		# formatter_class=argparse.RawDescriptionHelpFormatter
+		formatter_class=argparse.RawTextHelpFormatter
 	)
 	parser.add_argument('output_lang', nargs=1, type=validation_lang, help='target language')
 	parser.add_argument('input_file', nargs=1, type=lambda x: Path(x).resolve(strict=True), help='file to translate')
@@ -184,14 +184,15 @@ if __name__ == '__main__':
 	group_input_language.add_argument('-i', '--input-lang', dest='input_lang', type=validation_lang, help='The base language to translate from')
 	group_input_language.add_argument('-a', '--agnostic', action="store_true", help="language agnostic translate (default)")
 
-	parser.add_argument('-o', '--output-file', default="out.odt", dest="output_file", type=str, help='The output file translated')
+	parser.add_argument('-o', '--output-file', default="%n-%l.odt", dest="output_file", type=str, help='The output file translated, formats ;\n  %%n  basename\n  %%l  target language')
 	parser.add_argument('-p', '--parameters', choices=[4, 12, 27], type=int, default=LLM_MODEL_PARAMETERS_DEFAULT, help="size of model's parameters (billion)")
 	parser.add_argument('--prompt', choices=["fast", "balance", "accurate"], type=str, default="fast", help="type of prompt")
+	# parser.add_argument('-r', '--recursive')
 	parser.add_argument('-l', '--languages', action="store_true", help="list languages (shorten)")
 	parser.add_argument('-ll', '--languages-full', action="store_true", help="list languages (full)")
 	args = parser.parse_args()
 
-	# print(args)
+	print(args)
 	if args.languages:
 		print(show_langs())
 		sys.exit(0)
@@ -207,6 +208,14 @@ if __name__ == '__main__':
 
 	args.output_lang = args.output_lang[0]
 	args.input_file = args.input_file[0]
+
+	output = args.output_file \
+		.replace("%n", os.path.basename(args.input_file)) \
+		.replace("%l", args.output_lang)
+
+	shutil.copyfile(args.input_file, output)
+	# shutil.copy(src, dst)
+
 	# print(args)
 
 	prompt = PROMPT["accurate_any" if args.agnostic or not args.input_lang else args.prompt]
@@ -239,12 +248,12 @@ if __name__ == '__main__':
 	start_time = time.time()
 	try:
 		print(strftime("%Y-%m-%d %H:%M:%S", localtime()))
-		edit_paragraphs_inplace(args.input_file, translate_full)
+		edit_paragraphs_inplace(output, translate_full)
 
 		# Print joined non-empty paragraphs (same behavior as original)
-		paras = odt_paragraphs(args.input_file)
-		text = '\n'.join(p.strip() for p in paras if p.strip())
-		print(text)
+		# paras = odt_paragraphs(args.input_file)
+		# text = '\n'.join(p.strip() for p in paras if p.strip())
+		# print(text)
 	except KeyboardInterrupt:
 		pass
 
