@@ -183,6 +183,7 @@ if __name__ == '__main__':
 	parser.add_argument('-t', '--tag', type=str, default=LLM_MODEL_TAG_DEFAULT, help="model's tag")
 	parser.add_argument('--prompt', choices=["fast", "balance", "accurate"], type=str, default="accurate", help="type of prompt")
 	# parser.add_argument('-r', '--recursive')
+	parser.add_argument('-v', '--verbose', action="store_true", help="show original and translated texts")
 	parser.add_argument('-l', '--languages', action="store_true", help="list languages (shorten)")
 	parser.add_argument('-ll', '--languages-full', action="store_true", help="list languages (full)")
 	args = parser.parse_args()
@@ -271,12 +272,14 @@ if __name__ == '__main__':
 
 		# start_time = time.time()
 
-		print(f"\n\x1b[37m{full_text}\x1b[0m")
+		if args.verbose:
+			print(f"\n\x1b[37m{full_text}\x1b[0m")
 		response = ollama.chat(
 			model=f"{LLM_MODEL}:{args.tag}",
 			messages=messages
 		)
-		print(response['message']['content'])
+		if args.verbose:
+			print(response['message']['content'].strip())
 		# elapsed_time = time.time() - start_time
 		return response['message']['content'].strip()
 
