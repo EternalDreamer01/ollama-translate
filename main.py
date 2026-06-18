@@ -72,7 +72,6 @@ def edit_paragraphs_inplace(path, transform_fn):
 
 	# find paragraphs and headings (elements themselves)
 	paras = root.findall('.//text:p', NS) + root.findall('.//text:h', NS)
-	reg_text = re.compile(r"^([a-z]|[\d \+]+|[\w\-\.]+@([\w-]+\.)+[\w-]{2,}|(GitHub|LinkedIn):?\s*https?:\/\/[-a-zA-Z0-9@%._\+~#=]{1,256}\.[a-z]{2,128}\b[-a-zA-Z0-9@:%_\+.~#?&\/\/=]*)$")
 
 	# helper to extract inner text similarly to odt_paragraphs
 	def paragraph_text(el):
@@ -86,19 +85,22 @@ def edit_paragraphs_inplace(path, transform_fn):
 				parts.append(node.tail)
 		return ''.join(parts)
 
-	def clean_text(rgx_list, text):
+	def clean_text(rgx_list: list[str] | list[tuple[str,re.RegexFlag]], text: str):
 		new_text = text
 		for rgx_match in rgx_list:
-			new_text = re.sub(rgx_match, '', new_text, flags=re.UNICODE)
+			if isinstance(rgx_match, str):
+				new_text = re.sub(rgx_match, '', new_text)
+			else:
+				new_text = re.sub(rgx_match[0], '', new_text, flags=rgx_match[1])
 		return new_text
 
 	regex_clean = [
 		r"[\w_\-\.]+@([\w\-]+\.)+[\w\-]{2,}",	# email
 		r"(https://[^ ]{3,}|[^ ]+\.com\/?[^ ]*)", # url
-		r"[$&+,:;=?@#|'<>.^*()%!\-\u2013\u2014]",			# special character
+		(r"[$&+,:;=?@#|'<>.^*()%!\-\u2013\u2014]", re.UNICODE),			# special character
 		r"[\d \+]+",							# number
 		r"[A-Z]{3,}",							# name in capital
-		r"("+ r'|'.join(EXCLUDED_WORDS) +")" # sites
+		(r"\b("+ r'|'.join(EXCLUDED_WORDS) + r")\b", re.IGNORECASE) # sites
 	]
 
 	# apply transformation to each paragraph element in-place
