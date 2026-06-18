@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 ################################################################################
 # @file	  main.py
 # @brief	 Edit all ODT paragraphs in-place by applying a transform function
@@ -15,16 +15,17 @@
 ################################################################################
 
 from lxml import etree
-import argparse, zipfile, sys, os, colorama, tempfile, shutil, time, datetime, ollama, re
+import argparse, zipfile, sys, os, tempfile, shutil, time, datetime, ollama, re
 from lang import lang_dict
 from rich.progress import track
 from pathlib import Path
 from time import localtime, strftime
 from prompt import PROMPT
-from colorama import Fore, Style
+from utils import EXCLUDED_WORDS
 
-LLM_MODEL = "translategemma"
-LLM_MODEL_PARAMETERS_DEFAULT = 4
+
+LLM_MODEL = "gemma3"
+LLM_MODEL_TAG_DEFAULT = "4b"
 
 NS = {'text': 'urn:oasis:names:tc:opendocument:xmlns:text:1.0'}
 TEXT_NS = NS['text']
@@ -97,20 +98,14 @@ def edit_paragraphs_inplace(path, transform_fn):
 		r"[$&+,:;=?@#|'<>.^*()%!\-\u2013\u2014]",			# special character
 		r"[\d \+]+",							# number
 		r"[A-Z]{3,}",							# name in capital
-		r"(GitHub|GitLab|LinkedIn|Facebook|Reddit|Quora|StackOverflow)" # sites
+		r"("+ r'|'.join(EXCLUDED_WORDS) +")" # sites
 	]
 
 	# apply transformation to each paragraph element in-place
 	for p in track(paras):
 		orig = paragraph_text(p).strip()
 		if orig and clean_text(regex_clean, orig).strip():
-			print(f"\n\x1b[37m{orig}\x1b[0m")
-			new = transform_fn(orig)
-			print(new)
-			# ensure string
-			if new is None:
-				new = ''
-			_set_mixed_text(p, str(new))
+			_set_mixed_text(p, transform_fn(orig))
 
 	# serialize modified content.xml
 	new_content = etree.tostring(root, xml_declaration=True, encoding='UTF-8', standalone=False)
@@ -175,7 +170,7 @@ if __name__ == '__main__':
 
 	parser = argparse.ArgumentParser(
 		description="Translate LibreOffice file using a local Ollama model",
-		epilog="Default model: "+f"{LLM_MODEL}:{LLM_MODEL_PARAMETERS_DEFAULT}b",
+		epilog="Default model: "+f"{LLM_MODEL}:{LLM_MODEL_TAG_DEFAULT}",
 		formatter_class=argparse.RawTextHelpFormatter
 	)
 	parser.add_argument('output_lang', nargs=1, type=validation_lang, help='target language')
@@ -185,14 +180,14 @@ if __name__ == '__main__':
 	group_input_language.add_argument('-a', '--agnostic', action="store_true", help="language agnostic translate (default)")
 
 	parser.add_argument('-o', '--output-file', default="%n-%l.odt", dest="output_file", type=str, help='The output file translated, formats ;\n  %%n  basename\n  %%l  target language')
-	parser.add_argument('-p', '--parameters', choices=[4, 12, 27], type=int, default=LLM_MODEL_PARAMETERS_DEFAULT, help="size of model's parameters (billion)")
-	parser.add_argument('--prompt', choices=["fast", "balance", "accurate"], type=str, default="fast", help="type of prompt")
+	parser.add_argument('-t', '--tag', type=str, default=LLM_MODEL_TAG_DEFAULT, help="model's tag")
+	parser.add_argument('--prompt', choices=["fast", "balance", "accurate"], type=str, default="accurate", help="type of prompt")
 	# parser.add_argument('-r', '--recursive')
 	parser.add_argument('-l', '--languages', action="store_true", help="list languages (shorten)")
 	parser.add_argument('-ll', '--languages-full', action="store_true", help="list languages (full)")
 	args = parser.parse_args()
 
-	print(args)
+	# print(args)
 	if args.languages:
 		print(show_langs())
 		sys.exit(0)
@@ -200,20 +195,62 @@ if __name__ == '__main__':
 		print(show_langs(False))
 		sys.exit(0)
 
-	params = args.parameters
 	try:
-		ollama.show(f"{LLM_MODEL}:{params}b")
+		ollama.show(f"{LLM_MODEL}:{args.tag}")
 	except ollama.ResponseError:
-		ollama.pull(f"{LLM_MODEL}:{params}b")
+		try:
+			from rich.progress import Progress, BarColumn, TextColumn, DownloadColumn, TransferSpeedColumn, TimeRemainingColumn
+
+			current_digest = ""
+			tasks = {}
+
+			with Progress(
+				TextColumn("[bold blue]{task.description}"),
+				BarColumn(),
+				DownloadColumn(),
+				TransferSpeedColumn(),
+				TimeRemainingColumn(),
+			) as progress:
+				for item in ollama.pull(f"{LLM_MODEL}:{args.tag}", stream=True):
+					digest = item.get("digest", "")
+
+					if digest != current_digest and current_digest in tasks:
+						progress.stop_task(tasks[current_digest])
+
+					if not digest:
+						print(item.get("status"))
+						continue
+
+					if digest not in tasks and (total := item.get("total")):
+						tasks[digest] = progress.add_task(
+							f"pulling {digest[7:19]}",
+							total=total,
+						)
+
+					if completed := item.get("completed"):
+						progress.update(tasks[digest], completed=completed)
+
+					current_digest = digest
+
+		except KeyboardInterrupt:
+			sys.exit(0)
 
 	args.output_lang = args.output_lang[0]
 	args.input_file = args.input_file[0]
 
 	output = args.output_file \
-		.replace("%n", os.path.basename(args.input_file)) \
+		.replace("%n", args.input_file.stem) \
 		.replace("%l", args.output_lang)
 
 	shutil.copyfile(args.input_file, output)
+
+	language_agnostic = args.agnostic or not args.input_lang
+	prompt_type = "accurate_any" if language_agnostic else args.prompt
+
+	print(f"model:  {LLM_MODEL}:{args.tag}")
+	print(f"target: {lang_dict[args.output_lang]} ({args.output_lang})")
+	print(f"output: {output}")
+	print(f"prompt: {prompt_type}")
 	# shutil.copy(src, dst)
 
 	# print(args)
@@ -234,17 +271,19 @@ if __name__ == '__main__':
 
 		# start_time = time.time()
 
+		print(f"\n\x1b[37m{full_text}\x1b[0m")
 		response = ollama.chat(
-			model=f"{LLM_MODEL}:{params}b",
+			model=f"{LLM_MODEL}:{args.tag}",
 			messages=messages
 		)
+		print(response['message']['content'])
 		# elapsed_time = time.time() - start_time
-		return response['message']['content']
+		return response['message']['content'].strip()
 
 	# Apply transform in-place
 	start_time = time.time()
 	try:
-		print(strftime("%Y-%m-%d %H:%M:%S", localtime()))
+		print(strftime("time:   %Y-%m-%d %H:%M:%S", localtime()))
 		edit_paragraphs_inplace(output, translate_full)
 
 		# Print joined non-empty paragraphs (same behavior as original)

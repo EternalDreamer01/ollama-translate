@@ -1,0 +1,26 @@
+
+EXCLUDED_WORDS = [
+	"GitHub",
+	"GitLab",
+	"LinkedIn",
+	"Facebook",
+	"Reddit",
+	"Quora",
+	"StackOverflow",
+	"Windows",
+	"Linux",
+	"C\\+\\+",
+	"Rust",
+	"Node.?JS",
+	"NoSQL",
+	"PHP",
+	"Git",
+	"Docker",
+	"Regex",
+	"VS ?Code",
+	"Kdenlive",
+	"Microsoft",
+	"LibreOffice",
+	"Nmap",
+	"Wireshark"
+]
