@@ -65,52 +65,48 @@ if __name__ == '__main__':
 	args.list() or sys.exit(0)
 
 	parser = argparse.ArgumentParser(
-		usage="{} input_lang output_lang input_file".format(Path(__file__).name),
+		usage="{} INPUT_LANG OUTPUT_LANG {{ INPUT_FILE | -t TEXT }}".format(Path(__file__).name),
 		description="Translate files using a local Ollama model",
 		epilog="Default model: " + f"{LLM_MODEL}:{LLM_MODEL_TAG_DEFAULT}",
 		formatter_class=argparse.RawTextHelpFormatter,
 		parents=[parser_langs]
 	)
-	parser.add_argument('input_lang', nargs=1, type=lambda l: validation_lang(l, LANGUAGE_AGNOSTIC),
+	parser.add_argument('INPUT_LANG', nargs=1, type=lambda l: validation_lang(l, LANGUAGE_AGNOSTIC),
 						help='base language in input file.\nUse "-", "all" or "any" to translate from any language everything\nIf a language is specified, any other language will be kept as-is')
-	parser.add_argument('output_lang', nargs=1, type=validation_lang, help='target language in output file')
+	parser.add_argument('OUTPUT_LANG', nargs=1, type=validation_lang, help='target language in output file')
 	# group_parser = parser.add_mutually_exclusive_group(required=True)
-	parser.add_argument('input_file', nargs='?', type=lambda x: Path(x).resolve(strict=True), help='file to translate')
+	parser.add_argument('INPUT_FILE', nargs='?', type=lambda x: Path(x).resolve(strict=True), help='file to translate')
 	parser.add_argument('-t', '--text', type=str, help="text to translate")
 
 	parser.add_argument('-o', '--output-file', default=OUTPUT_FILE_DEFAULT, dest="output_file", type=str,
 						help='Output basename file translated. Possible formats :\n  {n} basename\n  {l} target language\nDefault: %s' % OUTPUT_FILE_DEFAULT)
 	parser.add_argument('--tag', type=str, default=LLM_MODEL_TAG_DEFAULT, help="model's tag")
+	parser.add_argument('-r', '--recursive', action="store_true", help="")
 	parser.add_argument('--prompt', choices=["fast", "balance", "accurate"], type=str, default="accurate", help="type of prompt")
 	parser.add_argument('-v', '--verbose', action="store_true", help="show original and translated texts")
 	args = parser.parse_args()
 
 
-	if (args.input_file is None) and (args.text is None):
-		parser.error("input_file or -t/--text required")
-	elif (args.input_file is not None) and (args.text is not None):
-		parser.error("Provide either input_file or -t/--text, but not both")
+	if (args.INPUT_FILE is None) and (args.text is None):
+		parser.error("INPUT_FILE or -t/--text required")
+	elif (args.INPUT_FILE is not None) and (args.text is not None):
+		parser.error("Provide either INPUT_FILE or -t/--text, but not both")
 
 	pull_model(f"{LLM_MODEL}:{args.tag}")
 
 	# print(args)
-	args.input_lang = args.input_lang[0]
-	args.output_lang = args.output_lang[0]
-	# args.input_file = args.input_file[0]
+	args.INPUT_LANG = args.INPUT_LANG[0]
+	args.OUTPUT_LANG = args.OUTPUT_LANG[0]
+	# args.INPUT_FILE = args.INPUT_FILE[0]
 
 
-	prompt_type = "accurate_any" if args.input_lang in LANGUAGE_AGNOSTIC else args.prompt
-
-	if args.verbose:
-		print(f"model:  {LLM_MODEL}:{args.tag}")
-		print(f"target: {LANG_DICT[args.output_lang]} ({args.output_lang})")
-		print(f"prompt: {prompt_type}")
+	prompt_type = "accurate_any" if args.INPUT_LANG in LANGUAGE_AGNOSTIC else args.prompt
 
 	system_prompt = PROMPT[prompt_type].format(
-		SOURCE_LANG=LANG_DICT.get(args.input_lang, args.input_lang),
-		SOURCE_CODE=args.input_lang,
-		TARGET_LANG=LANG_DICT.get(args.output_lang, args.output_lang),
-		TARGET_CODE=args.output_lang,
+		SOURCE_LANG=LANG_DICT.get(args.INPUT_LANG, args.INPUT_LANG),
+		SOURCE_CODE=args.INPUT_LANG,
+		TARGET_LANG=LANG_DICT.get(args.OUTPUT_LANG, args.OUTPUT_LANG),
+		TARGET_CODE=args.OUTPUT_LANG,
 	)
 
 	def translate_full(full_text: str) -> str:
@@ -126,14 +122,17 @@ if __name__ == '__main__':
 
 	if args.text:
 		if args.verbose:
+			print(f"model:  {LLM_MODEL}:{args.tag}")
+			print(f"target: {LANG_DICT[args.OUTPUT_LANG]} ({args.OUTPUT_LANG})")
+			print(f"prompt: {prompt_type}")
 			print()
 		print(translate_full(args.text))
 		sys.exit(0)
 
 	output = args.output_file.format(
-		n=args.input_file.stem,
-		l=args.output_lang
-	) + args.input_file.suffix.lower()
+		n=args.INPUT_FILE.stem,
+		l=args.OUTPUT_LANG
+	) + args.INPUT_FILE.suffix.lower()
 
 	if Path(output).exists():
 		print(f"Error: File '{output}' already exists", file=sys.stderr)
@@ -142,9 +141,13 @@ if __name__ == '__main__':
 			a = input("Do you want to delete this file ? [y/N] ").lower()
 			if a == "n":
 				sys.exit(0)
+		print()
 
-	shutil.copyfile(args.input_file, output)
+	shutil.copyfile(args.INPUT_FILE, output)
 	if args.verbose:
+		print(f"model:  {LLM_MODEL}:{args.tag}")
+		print(f"target: {LANG_DICT[args.OUTPUT_LANG]} ({args.OUTPUT_LANG})")
+		print(f"prompt: {prompt_type}")
 		print(f"output: {output}")
 		# print()
 
