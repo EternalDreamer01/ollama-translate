@@ -1,20 +1,3 @@
-#!/usr/bin/python3
-################################################################################
-# @file      prompt.py
-# @brief     
-# @date      We Jun 2026
-# @author    Dimitri Simon
-# 
-# PROJECT:   ollama-translate
-# 
-# MODIFIED:  Wed Jun 17 2026
-# BY:        Dimitri Simon
-# 
-# Copyright (c) 2026 Dimitri Simon
-# 
-################################################################################
-
-
 PROMPT = {
    "fast": """
 You are a professional {SOURCE_LANG} ({SOURCE_CODE}) to {TARGET_LANG} ({TARGET_CODE}) translator. Your goal is to accurately convey the meaning and nuances of the original {SOURCE_LANG} text while adhering to {TARGET_LANG} grammar, vocabulary, and cultural sensitivities.

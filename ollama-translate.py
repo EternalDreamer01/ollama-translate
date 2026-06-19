@@ -15,21 +15,14 @@
 ################################################################################
 
 from lxml import etree
-import argparse, zipfile, sys, os, tempfile, shutil, time, datetime, ollama, re
-from lang import lang_dict
+import argparse, zipfile, sys, os, tempfile, shutil, time, datetime, ollama, re, json
 from rich.progress import track
 from pathlib import Path
 from time import localtime, strftime
 from prompt import PROMPT
-from utils import EXCLUDED_WORDS
-
-
-LLM_MODEL = "gemma3"
-LLM_MODEL_TAG_DEFAULT = "4b"
-
-NS = {'text': 'urn:oasis:names:tc:opendocument:xmlns:text:1.0'}
-TEXT_NS = NS['text']
-LINE_BREAK_TAG = '{%s}line-break' % TEXT_NS
+from utils import pull_model
+from conf import *
+# import reformat
 
 def _set_mixed_text(el, text):
 	"""
@@ -95,11 +88,11 @@ def edit_paragraphs_inplace(path, transform_fn):
 		return new_text
 
 	regex_clean = [
-		r"[\w_\-\.]+@([\w\-]+\.)+[\w\-]{2,}",	# email
-		r"(https://[^ ]{3,}|[^ ]+\.com\/?[^ ]*)", # url
-		(r"[$&+,:;=?@#|'<>.^*()%!\-\u2013\u2014]", re.UNICODE),			# special character
-		r"[\d \+]+",							# number
-		r"[A-Z]{3,}",							# name in capital
+		r"[\w_\-\.]+@([\w\-]+\.)+[\w\-]{2,}",						# email
+		r"(https://[^ ]{3,}|[^ ]+\.com\/?[^ ]*)",					# url
+		(r"[$&+,:;=?@#|'<>.^*()%!\-\u2013\u2014]", re.UNICODE),		# special character
+		r"[\d \+]+",												# number
+		r"[A-Z]{3,}",												# name in capital
 		(r"\b("+ r'|'.join(EXCLUDED_WORDS) + r")\b", re.IGNORECASE) # sites
 	]
 
@@ -150,119 +143,108 @@ def odt_paragraphs(path):
 			paras.append(paragraph_text(p))
 	return paras
 
+
 if __name__ == '__main__':
-	def validation_lang(lang: str):
-		if not lang in lang_dict:
+	def validation_lang(lang: str, ext: list[str] = []):
+		lang = lang.lower()
+		if lang in ext:
+			return lang
+		if not lang in LANG_DICT:
 			raise argparse.ArgumentTypeError(f"Language '{lang}' isn't valid")
 		return lang
 
-	def show_langs(shorten: bool=True) -> str:
-		l = [f"{k} ({v})" for k, v in lang_dict.items() if not shorten or len(k) == 2]
+	def show_langs(shorten: bool=True) -> None:
+		l = [f"{k} {v}" for k, v in LANG_DICT.items() if not shorten or len(k) == 2]
 		txt_langs = ""
 		def get_nth(index: int) -> str:
 			return l[index] if index < len(l) else ""
 
-		ELEMENTS_ONELINE = 5
+		MAX_CELL_WIDTH = len(max(l, key=len)) + 1
+		# print(max_cell_width)
+		ELEMENTS_ONELINE = (os.get_terminal_size().columns - 1) // MAX_CELL_WIDTH
+		if ELEMENTS_ONELINE < 1:
+			ELEMENTS_ONELINE = 1
+		if ELEMENTS_ONELINE > 8:
+			ELEMENTS_ONELINE = 8
 		# print(' '.join(['%-18s' for _ in range(ELEMENTS_ONELINE)]))
 		# print(tuple(get_nth(j) for j in range(ELEMENTS_ONELINE)))
 
+		# print("/".join([k for k in LANGUAGE_AGNOSTIC])+": language agnostic input")
 		for i in range(0, len(l), ELEMENTS_ONELINE):
-			txt_langs += f"  {' '.join(['%-18s' for _ in range(ELEMENTS_ONELINE)])}\n" % tuple(get_nth(i+j) for j in range(ELEMENTS_ONELINE))
-		return txt_langs
+			txt_langs += f"{''.join([f'%-{MAX_CELL_WIDTH}s' for _ in range(ELEMENTS_ONELINE)])}\n" % tuple(get_nth(i+j) for j in range(ELEMENTS_ONELINE))
+		print(txt_langs)
+
+	LANG_DICT = {}
+	with open('lang.json') as json_file:
+		LANG_DICT = json.load(json_file)
+
+	parser_langs = argparse.ArgumentParser(add_help=False)
+	group_list = parser_langs.add_mutually_exclusive_group()
+	group_list.add_argument('-l', '--languages', action='store_const', const=show_langs, dest='list', help="list languages (shorten)")
+	group_list.add_argument('-ll', '--languages-full', action='store_const', const=lambda: show_langs(False), dest='list', help="list languages (full)")
+	group_list.set_defaults(list=lambda:True)
+	args, _unknown = parser_langs.parse_known_args()
+
+	args.list() or sys.exit(0)
 
 	parser = argparse.ArgumentParser(
-		description="Translate LibreOffice file using a local Ollama model",
+		usage="{} input_lang output_lang input_file".format(Path(__file__).name),
+		description="Translate files using a local Ollama model",
 		epilog="Default model: "+f"{LLM_MODEL}:{LLM_MODEL_TAG_DEFAULT}",
-		formatter_class=argparse.RawTextHelpFormatter
+		formatter_class=argparse.RawTextHelpFormatter,
+		parents=[parser_langs]
 	)
-	parser.add_argument('output_lang', nargs=1, type=validation_lang, help='target language')
+	parser.add_argument('input_lang', nargs=1, type=lambda l: validation_lang(l, LANGUAGE_AGNOSTIC), help='base language in input file.\nUse "-", "all" or "any" to translate from any language everything\nIf a language is specified, any other language will be kept as-is')
+	parser.add_argument('output_lang', nargs=1, type=validation_lang, help='target language in output file')
 	parser.add_argument('input_file', nargs=1, type=lambda x: Path(x).resolve(strict=True), help='file to translate')
-	group_input_language = parser.add_mutually_exclusive_group()
-	group_input_language.add_argument('-i', '--input-lang', dest='input_lang', type=validation_lang, help='The base language to translate from')
-	group_input_language.add_argument('-a', '--agnostic', action="store_true", help="language agnostic translate (default)")
+	# group_input_language = parser.add_mutually_exclusive_group(required=True)
+	# group_input_language.add_argument('-i', '--input-lang', dest='input_lang', type=validation_lang, help='The base language to translate from')
+	# group_input_language.add_argument('-a', '--agnostic', action="store_true", help="language agnostic translate (default)")
 
-	parser.add_argument('-o', '--output-file', default="%n-%l.odt", dest="output_file", type=str, help='The output file translated, formats ;\n  %%n  basename\n  %%l  target language')
+	parser.add_argument('-o', '--output-file', default=OUTPUT_FILE_DEFAULT, dest="output_file", type=str, help='Output file translated. Possible formats :\n  {n} basename\n  {l} target language\nDefault: %s' % OUTPUT_FILE_DEFAULT)
 	parser.add_argument('-t', '--tag', type=str, default=LLM_MODEL_TAG_DEFAULT, help="model's tag")
 	parser.add_argument('--prompt', choices=["fast", "balance", "accurate"], type=str, default="accurate", help="type of prompt")
 	# parser.add_argument('-r', '--recursive')
 	parser.add_argument('-v', '--verbose', action="store_true", help="show original and translated texts")
-	parser.add_argument('-l', '--languages', action="store_true", help="list languages (shorten)")
-	parser.add_argument('-ll', '--languages-full', action="store_true", help="list languages (full)")
 	args = parser.parse_args()
 
-	# print(args)
-	if args.languages:
-		print(show_langs())
-		sys.exit(0)
-	elif args.languages_full:
-		print(show_langs(False))
-		sys.exit(0)
+	pull_model(f"{LLM_MODEL}:{args.tag}")
 
-	try:
-		ollama.show(f"{LLM_MODEL}:{args.tag}")
-	except ollama.ResponseError:
-		try:
-			from rich.progress import Progress, BarColumn, TextColumn, DownloadColumn, TransferSpeedColumn, TimeRemainingColumn
-
-			current_digest = ""
-			tasks = {}
-
-			with Progress(
-				TextColumn("[bold blue]{task.description}"),
-				BarColumn(),
-				DownloadColumn(),
-				TransferSpeedColumn(),
-				TimeRemainingColumn(),
-			) as progress:
-				for item in ollama.pull(f"{LLM_MODEL}:{args.tag}", stream=True):
-					digest = item.get("digest", "")
-
-					if digest != current_digest and current_digest in tasks:
-						progress.stop_task(tasks[current_digest])
-
-					if not digest:
-						print(item.get("status"))
-						continue
-
-					if digest not in tasks and (total := item.get("total")):
-						tasks[digest] = progress.add_task(
-							f"pulling {digest[7:19]}",
-							total=total,
-						)
-
-					if completed := item.get("completed"):
-						progress.update(tasks[digest], completed=completed)
-
-					current_digest = digest
-
-		except KeyboardInterrupt:
-			sys.exit(0)
-
+	args.input_lang = args.input_lang[0]
 	args.output_lang = args.output_lang[0]
 	args.input_file = args.input_file[0]
 
-	output = args.output_file \
-		.replace("%n", args.input_file.stem) \
-		.replace("%l", args.output_lang)
+
+	output = args.output_file.format(
+		n=args.input_file.stem,
+		l=args.output_lang
+	)
+
+	if Path(output).exists():
+		print(f"Error: File '{output}' already exists", file=sys.stderr)
+		a = ""
+		while a != "y":
+			a = input("Do you want to delete this file ? [y/N] ").lower()
+			if a == "n":
+				sys.exit(0)
+		# sys.exit(1)
 
 	shutil.copyfile(args.input_file, output)
 
-	language_agnostic = args.agnostic or not args.input_lang
-	prompt_type = "accurate_any" if language_agnostic else args.prompt
+	prompt_type = "accurate_any" if args.input_lang in LANGUAGE_AGNOSTIC else args.prompt
 
 	print(f"model:  {LLM_MODEL}:{args.tag}")
-	print(f"target: {lang_dict[args.output_lang]} ({args.output_lang})")
+	print(f"target: {LANG_DICT[args.output_lang]} ({args.output_lang})")
 	print(f"output: {output}")
 	print(f"prompt: {prompt_type}")
 	# shutil.copy(src, dst)
+	# sys.exit(0)
 
-	# print(args)
-
-	system_prompt = PROMPT["accurate_any" if args.agnostic or not args.input_lang else args.prompt] \
+	system_prompt = PROMPT[prompt_type] \
 		.format(
-			SOURCE_LANG=lang_dict.get(args.input_lang, args.input_lang),
+			SOURCE_LANG=LANG_DICT.get(args.input_lang, args.input_lang),
 			SOURCE_CODE=args.input_lang,
-			TARGET_LANG=lang_dict.get(args.output_lang, args.output_lang),
+			TARGET_LANG=LANG_DICT.get(args.output_lang, args.output_lang),
 			TARGET_CODE=args.output_lang,
 		)
 
