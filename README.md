@@ -21,7 +21,7 @@ This tool extracts text from supported files, sends it to a local LLM for transl
 ## Requirements
 
 - Python 3.10+
-- Ollama installed and running locally
+- [Ollama](https://ollama.com/download)
 
 ## Python dependencies
 
