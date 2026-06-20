@@ -1,2 +1,6 @@
 ollama
 lxml
+rich
+python-docx
+openpyxl
+python-pptx
