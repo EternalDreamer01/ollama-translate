@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
 ################################################################################
-# @file	  main.py
-# @brief	 Edit all ODT paragraphs in-place by applying a transform function
-# @date	  Mo Jun 2026
+# @file	    ollama-translate.py
+# @date	    Mo Jun 2026
 # @author	Dimitri Simon
 #
-# PROJECT:   ollama-translate
+# PROJECT:  ollama-translate
 #
-# MODIFIED:  Mon Jun 15 2026
+# MODIFIED: Mon Jun 15 2026
 # BY:		Dimitri Simon
 #
 # Copyright (c) 2026 Dimitri Simon
@@ -126,9 +125,15 @@ if __name__ == '__main__':
 			)
 			return response['message']['content'].strip()
 
+		def source_lang() -> str:
+			if args.INPUT_LANG in LANGUAGE_AGNOSTIC:
+				return "agnostic"
+			return f"{LANG_DICT[args.INPUT_LANG]} ({args.INPUT_LANG})"
+
 		if args.text:
 			if args.verbose:
 				print(f"model:  {LLM_MODEL}:{args.tag}")
+				print(f"source: {source_lang()}")
 				print(f"target: {LANG_DICT[args.OUTPUT_LANG]} ({args.OUTPUT_LANG})")
 				print(f"prompt: {prompt_type}")
 				print()
@@ -174,6 +179,7 @@ if __name__ == '__main__':
 	try:
 		if args.verbose:
 			print(f"model:  {LLM_MODEL}:{args.tag}")
+			print(f"source: {source_lang()}")
 			print(f"target: {LANG_DICT[args.OUTPUT_LANG]} ({args.OUTPUT_LANG})")
 			print(f"prompt: {prompt_type}")
 			print(f"output: {output}")

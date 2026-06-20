@@ -1,6 +1,7 @@
 __pycache__/
 test.py
 *.odt
+*.docx
 .~*#
 *.pdf
 

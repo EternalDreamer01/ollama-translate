@@ -4,6 +4,7 @@ from conf import *
 from utils import *
 from typing import Callable
 from pathlib import Path
+from rich.progress import track, Progress
 
 
 def translate_md(path: Path, translate_fn: Callable[[str], str], verbose: bool=False):
@@ -19,7 +20,7 @@ def translate_md(path: Path, translate_fn: Callable[[str], str], verbose: bool=F
     out = []
     in_code = False
 
-    for line in lines:
+    for line in track(lines):
         stripped = line.rstrip("\n")
 
         # fenced code blocks
@@ -78,7 +79,7 @@ def translate_latex(path: Path, translate_fn: Callable[[str], str], verbose: boo
     parts = re.split(r"(\\[a-zA-Z]+(?:\[[^\]]*\])?(?:\{[^{}]*\})*)", text)
     out = []
 
-    for part in parts:
+    for part in track(parts):
         if not part:
             continue
         if part.startswith("\\"):
@@ -107,7 +108,7 @@ def translate_txt(path: Path, translate_fn: Callable[[str], str], verbose: bool=
 		lines = f.readlines()
 
 	out = []
-	for line in lines:
+	for line in track(lines):
 		stripped = line.strip()
 		if stripped and clean_text(REG_CLEAN, stripped).strip():
 			out.append(translate_text(line.rstrip("\n"), translate_fn, verbose=verbose) + "\n")
@@ -129,7 +130,7 @@ def translate_csv(path: Path, translate_fn: Callable[[str], str], verbose: bool=
         reader = csv.reader(fin, dialect)
 
         rows = []
-        for row in reader:
+        for row in track(reader):
             new_row = []
             for cell in row:
                 if cell and clean_text(REG_CLEAN, cell).strip():
@@ -148,7 +149,7 @@ def translate_xml(path: Path, translate_fn: Callable[[str], str], verbose: bool=
     tree = etree.parse(str(path), parser)
     root = tree.getroot()
 
-    for el in root.iter():
+    for el in track(root.iter()):
         if el.text and el.text.strip() and clean_text(REG_CLEAN, el.text).strip():
             el.text = translate_text(el.text, translate_fn, verbose=verbose)
         if el.tail and el.tail.strip() and clean_text(REG_CLEAN, el.tail).strip():
@@ -164,7 +165,7 @@ def translate_html(path: Path, translate_fn: Callable[[str], str], verbose: bool
 
     skip_tags = {"script", "style", "noscript"}
 
-    for el in root.iter():
+    for el in track(root.iter()):
         tag = el.tag.lower() if isinstance(el.tag, str) else ""
         if tag in skip_tags:
             continue

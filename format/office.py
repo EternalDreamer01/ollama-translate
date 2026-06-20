@@ -1,7 +1,7 @@
 
 from lxml import etree
 import zipfile, os, tempfile, shutil, re, json, csv
-from rich.progress import track
+from rich.progress import track, Progress
 from conf import *
 from utils import *
 from typing import Callable
@@ -9,30 +9,29 @@ from pathlib import Path
 
 # Optional helpers
 try:
-    from docx import Document
+	from docx import Document
 except ImportError:
-    Document = None
+	Document = None
 
 try:
-    from openpyxl import load_workbook
+	from openpyxl import load_workbook
 except ImportError:
-    load_workbook = None
+	load_workbook = None
 
 try:
-    from pptx import Presentation
+	from pptx import Presentation
 except ImportError:
-    Presentation = None
+	Presentation = None
 
-
-from pypdf import PdfReader
-from reportlab.lib.pagesizes import A4
-from reportlab.pdfgen import canvas
-from reportlab.lib.units import mm
-from reportlab.pdfbase.pdfmetrics import stringWidth
-from rich.progress import track
-import shutil, textwrap
 
 def translate_pdf(path: Path, translate_fn: Callable[[str], str], verbose: bool=False):
+	from pypdf import PdfReader
+	from reportlab.lib.pagesizes import A4
+	from reportlab.pdfgen import canvas
+	from reportlab.lib.units import mm
+	from reportlab.pdfbase.pdfmetrics import stringWidth
+
+
 	reader = PdfReader(str(path))
 
 	tmp_out = str(path) + ".translated.pdf"
@@ -148,64 +147,70 @@ def translate_odp(path: Path, translate_fn: Callable[[str], str], verbose: bool=
 # DOCX
 # ---------------------------
 def translate_docx(path: Path, translate_fn: Callable[[str], str], verbose: bool=False):
-    if Document is None:
-        raise ImportError("python-docx is required for .docx files")
-    doc = Document(str(path))
+	if Document is None:
+		raise ImportError("python-docx is required for .docx files")
+	doc = Document(str(path))
 
-    for p in doc.paragraphs:
-        txt = p.text.strip()
-        if txt and clean_text(REG_CLEAN, txt).strip():
-            p.text = translate_text(txt, translate_fn, verbose=verbose)
+	if doc.paragraphs:
+		for p in track(doc.paragraphs, "Paragraphs..."):
+			txt = p.text.strip()
+			if txt and clean_text(REG_CLEAN, txt).strip():
+				p.text = translate_text(txt, translate_fn, verbose=verbose)
+	
+	if doc.tables:
+		tables_len = len(doc.tables)
+		for i in range(tables_len):
+			table = doc.tables[i]
+			for row in track(table.rows, description=f"Table {i}/{tables_len}"):
+				for cell in row.cells:
+					for p in cell.paragraphs:
+						txt = p.text.strip()
+						if txt and clean_text(REG_CLEAN, txt).strip():
+							p.text = translate_text(txt, translate_fn, verbose=verbose)
 
-    for table in doc.tables:
-        for row in table.rows:
-            for cell in row.cells:
-                for p in cell.paragraphs:
-                    txt = p.text.strip()
-                    if txt and clean_text(REG_CLEAN, txt).strip():
-                        p.text = translate_text(txt, translate_fn, verbose=verbose)
-
-    doc.save(str(path))
+	doc.save(str(path))
 
 
 # ---------------------------
 # XLSX
 # ---------------------------
 def translate_xlsx(path: Path, translate_fn: Callable[[str], str], verbose: bool=False):
-    if load_workbook is None:
-        raise ImportError("openpyxl is required for .xlsx files")
-    wb = load_workbook(str(path))
+	if load_workbook is None:
+		raise ImportError("openpyxl is required for .xlsx files")
+	wb = load_workbook(str(path))
 
-    for ws in wb.worksheets:
-        for row in ws.iter_rows():
-            for cell in row:
-                if isinstance(cell.value, str) and cell.value.strip():
-                    if clean_text(REG_CLEAN, cell.value).strip():
-                        cell.value = translate_text(cell.value, translate_fn, verbose=verbose)
+	worksheets_len = len(wb.worksheets)
+	for i in range(worksheets_len):
+		rows = wb.worksheets[i].iter_rows()
+		for row in track(rows, description=f"Table {i}/{worksheets_len}"):
+			for cell in row:
+				if isinstance(cell.value, str) and cell.value.strip():
+					if clean_text(REG_CLEAN, cell.value).strip():
+						cell.value = translate_text(cell.value, translate_fn, verbose=verbose)
 
-    wb.save(str(path))
+	wb.save(str(path))
 
 
 # ---------------------------
 # PPTX
 # ---------------------------
 def translate_pptx(path: Path, translate_fn: Callable[[str], str], verbose: bool=False):
-    if Presentation is None:
-        raise ImportError("python-pptx is required for .pptx files")
-    prs = Presentation(str(path))
+	if Presentation is None:
+		raise ImportError("python-pptx is required for .pptx files")
+	prs = Presentation(str(path))
 
-    def translate_shape(shape):
-        if hasattr(shape, "text_frame") and shape.has_text_frame:
-            for p in shape.text_frame.paragraphs:
-                for run in p.runs:
-                    txt = run.text.strip()
-                    if txt and clean_text(REG_CLEAN, txt).strip():
-                        run.text = translate_text(txt, translate_fn, verbose=verbose)
+	def translate_shape(shape):
+		if hasattr(shape, "text_frame") and shape.has_text_frame:
+			for p in shape.text_frame.paragraphs:
+				for run in p.runs:
+					txt = run.text.strip()
+					if txt and clean_text(REG_CLEAN, txt).strip():
+						run.text = translate_text(txt, translate_fn, verbose=verbose)
 
-    for slide in prs.slides:
-        for shape in slide.shapes:
-            translate_shape(shape)
+	for slide in track(prs.slides):
+		for shape in slide.shapes:
+			translate_shape(shape)
 
-    prs.save(str(path))
+	prs.save(str(path))
 
 
