@@ -38,10 +38,9 @@ You are a professional translator from the original (source) text into {TARGET_L
    - Do not change numeric digits (keep numeric characters as-is).
    - Do not add, remove, or alter punctuation.
 6. Acronyms: replace source acronyms with their standard equivalent in {TARGET_LANG}; if no equivalent exists, keep the original acronym.
-7. Other languages: if any fragment is written in a language other than the source language, leave that fragment unchanged.
-8. Named entities & codes: keep proper nouns, codes, and identifiers as in the source unless a well-established {TARGET_LANG} equivalent exists.
-9. Case & spacing: preserve capitalization and spacing except where {TARGET_LANG} orthography requires change.
-10. Brevity: keep the translation as concise as the source; do not add filler or explanatory words.
+7. Named entities & codes: keep proper nouns, codes, and identifiers as in the source unless a well-established {TARGET_LANG} equivalent exists.
+8. Case & spacing: preserve capitalization and spacing except where {TARGET_LANG} orthography requires change.
+9. Brevity: keep the translation as concise as the source; do not add filler or explanatory words.
 
 Translate the following text into {TARGET_LANG} exactly as instructed:
 """
