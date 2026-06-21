@@ -69,6 +69,7 @@ you might exclude words (strings) that you know cannot/shouldn't be translated (
 ```
 If a string appear to not contain any relevant word, it will be kept as is.
 - __Note:__ Applicable to `-t/--text`
+- __Note 2:__ The word is expected to match word boundaries (`\b`), it can't terminate in the middle of a word (e.g, `Turin` won't match `Turing`)
 
 Default excluded expressions (regex) (cf. [conf.py](./conf.py)) :
 - Emails
