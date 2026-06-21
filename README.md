@@ -62,14 +62,15 @@ Show original and translated texts ;
 ```
 
 #### Optimisation
-To optimise and translate your document faster ;
-you might exclude words (strings) that you know cannot/shouldn't be translated (e.g, names) ;
+To translate your document faster and more accurately ;
+you might exclude words (**insensitive case strings**) that you know cannot/shouldn't be translated (e.g, Programming Language, Company Name, Conference Name) ;
 ```sh
-./ot.py en es document.docx -e "Turing, Einstein"
+./ot.py en es document.docx -e "Turing, Einstein, NoSQL, Internet of Things Journal"
 ```
 If a string appear to not contain any relevant word, it will be kept as is.
 - __Note:__ Applicable to `-t/--text`
-- __Note 2:__ The word is expected to match word boundaries (`\b`), it can't terminate in the middle of a word (e.g, `Turin` won't match `Turing`)
+- __Note 2:__ These exclusions are applied before any other default exclusion, be careful not to overwrite/overlap default exclusions, e.g, `Albert Einstein` would overlap `einstein.com/`
+- __Note 3:__ The word is expected to match word boundaries (`\b`), it can't terminate in the middle of a word (e.g, `Turin` won't match `Turing`)
 
 Default excluded expressions (regex) (cf. [conf.py](./conf.py)) :
 - Emails

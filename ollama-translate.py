@@ -117,7 +117,7 @@ if __name__ == '__main__':
 		)
 
 		if args.exclude:
-			REG_CLEAN.append((r"|".join(map(re.escape, args.exclude)), re.IGNORECASE))
+			REG_CLEAN.insert(0, (r"|".join(map(re.escape, args.exclude)), re.IGNORECASE))
 
 		def translate_text(text: str) -> str:
 			if not text or not text.strip():
