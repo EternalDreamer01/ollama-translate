@@ -4,6 +4,8 @@ Translate documents using a local Ollama model.
 
 This tool extracts text from supported files, sends it to a local LLM for translation, and writes the translated content back to a new file.
 
+This tool currently uses Gemma3 for which we observed the best results (speed/accuracy).
+
 ## Features
 
 - Local translation with Ollama
@@ -43,9 +45,34 @@ __Examples:__
 
 ./ot.py en es -t "Hello world !" # Translate text from English to Spanish
 ```
+- __Note:__ When translating from a specific language, any other language will be kept as-is.
 
 List available languages:
 ```sh
 ./ot.py -l	# Short
 ./ot.py -ll	# Full
 ```
+
+### Advanced usage
+
+#### Verbose
+Show original and translated texts ;
+```sh
+./ot.py en es document.docx -v
+```
+
+#### Optimisation
+To optimise and translate your document faster ;
+you might exclude words (strings) that you know cannot/shouldn't be translated (e.g, names) ;
+```sh
+./ot.py en es document.docx -e "Turing, Einstein"
+```
+If a string appear to not contain any relevant word, it will be kept as is.
+- __Note:__ Applicable to `-t/--text`
+
+Default excluded expressions (regex) (cf. [conf.py](./conf.py)) :
+- Emails
+- URLs/domains
+- Phone numbers
+- Digits and capitals being more than 3 characters 
+- Numbers
