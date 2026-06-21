@@ -114,7 +114,7 @@ def edit_ooo_zip_inplace(path, translate_fn, tags, content_name="content.xml", v
     for p in track(paras):
         orig = paragraph_text(p).strip()
         if orig and clean_text(REG_CLEAN, orig).strip():
-            set_mixed_text(p, translate_text(orig, translate_fn, verbose=verbose))
+            set_mixed_text(p, translate_fn(orig))
 
     new_content = etree.tostring(root, xml_declaration=True, encoding='UTF-8', standalone=False)
 
@@ -155,7 +155,7 @@ def translate_docx(path: Path, translate_fn: Callable[[str], str], verbose: bool
 		for p in track(doc.paragraphs, "Paragraphs..."):
 			txt = p.text.strip()
 			if txt and clean_text(REG_CLEAN, txt).strip():
-				p.text = translate_text(txt, translate_fn, verbose=verbose)
+				p.text = translate_fn(txt)
 	
 	if doc.tables:
 		tables_len = len(doc.tables)
@@ -166,7 +166,7 @@ def translate_docx(path: Path, translate_fn: Callable[[str], str], verbose: bool
 					for p in cell.paragraphs:
 						txt = p.text.strip()
 						if txt and clean_text(REG_CLEAN, txt).strip():
-							p.text = translate_text(txt, translate_fn, verbose=verbose)
+							p.text = translate_fn(txt)
 
 	doc.save(str(path))
 
@@ -186,7 +186,7 @@ def translate_xlsx(path: Path, translate_fn: Callable[[str], str], verbose: bool
 			for cell in row:
 				if isinstance(cell.value, str) and cell.value.strip():
 					if clean_text(REG_CLEAN, cell.value).strip():
-						cell.value = translate_text(cell.value, translate_fn, verbose=verbose)
+						cell.value = translate_fn(cell.value)
 
 	wb.save(str(path))
 
@@ -205,7 +205,7 @@ def translate_pptx(path: Path, translate_fn: Callable[[str], str], verbose: bool
 				for run in p.runs:
 					txt = run.text.strip()
 					if txt and clean_text(REG_CLEAN, txt).strip():
-						run.text = translate_text(txt, translate_fn, verbose=verbose)
+						run.text = translate_fn(txt)
 
 	for slide in track(prs.slides):
 		for shape in slide.shapes:

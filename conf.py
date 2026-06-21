@@ -27,16 +27,17 @@ EXCLUDED_WORDS = [
 ]
 
 REG_CLEAN = [
-    r"[\w_\-\.]+@([\w\-]+\.)+[\w\-]{2,}",
-    r"(https://[^ ]{3,}|[^ ]+\.com\/?[^ ]*)",
-    (r"[$&+,:;=?@#|'<>.^*()%!\-\u2013\u2014]", re.UNICODE),
-    r"[\d \+]+",
-    r"[A-Z]{3,}",
+    r"[\w_\-\.]+@([\w\-]+\.)+[\w\-]{2,}",					# email
+    r"(https://[^ ]{3,}|[^ ]+\.com\/?[^ ]*)",				# url/domain
+    (r"[$&+,:;=?@#|'<>.^*()%!\-\u2013\u2014]", re.UNICODE),	# special character
+    r"[\d \+]{4,}",											# phone number
+    r"[A-Z0-9]{3,}",										# capital name
+    r"\d+",													# number
     (r"\b(" + r'|'.join(EXCLUDED_WORDS) + r")\b", re.IGNORECASE)
 ]
 
 LLM_MODEL = "gemma3"
-LLM_MODEL_TAG_DEFAULT = "12b"
+LLM_MODEL_TAG_DEFAULT = "4b"
 
 NS = {'text': 'urn:oasis:names:tc:opendocument:xmlns:text:1.0'}
 TEXT_NS = NS['text']

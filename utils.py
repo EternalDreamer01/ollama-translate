@@ -80,26 +80,11 @@ def paragraph_text(el):
     return ''.join(parts)
 
 
-def clean_text(rgx_list, text: str):
+def clean_text(rgx_list: list, text: str):
     new_text = text
     for rgx_match in rgx_list:
         if isinstance(rgx_match, str):
             new_text = re.sub(rgx_match, '', new_text)
         else:
             new_text = re.sub(rgx_match[0], '', new_text, flags=rgx_match[1])
-    return new_text
-
-
-
-def translate_text(text: str, translate_fn: Callable[[str], str], verbose=False):
-    if not text or not text.strip():
-        return text
-    cleaned = clean_text(REG_CLEAN, text)
-    if not cleaned.strip():
-        return text
-    if verbose:
-        print(f"\n\x1b[37m{text}\x1b[0m")
-    out = translate_fn(text)
-    if verbose:
-        print(out)
-    return out
+    return new_text.strip()

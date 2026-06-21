@@ -85,11 +85,13 @@ if __name__ == '__main__':
 
 	parser.add_argument('-o', '--output-file', default=OUTPUT_FILE_DEFAULT, dest="output_file", type=str,
 						help='Output basename file translated. Possible formats :\n  {n} basename\n  {l} target language\nDefault: %s' % OUTPUT_FILE_DEFAULT)
+	parser.add_argument('-e', '--exclude', type=lambda s: [t.strip() for t in s.split(',')], help="Comma-separated list of words to filter out")
 	parser.add_argument('--tag', type=str, default=LLM_MODEL_TAG_DEFAULT, help="model's tag")
 	parser.add_argument('--prompt', choices=["fast", "balance", "accurate"], type=str, default="accurate", help="type of prompt")
 	parser.add_argument('-v', '--verbose', action="store_true", help="show original and translated texts")
 	args = parser.parse_args()
 
+	# print(args)
 
 	if (args.INPUT_FILE is None) and (args.text is None):
 		parser.error("INPUT_FILE or -t/--text required")
@@ -114,16 +116,30 @@ if __name__ == '__main__':
 			TARGET_CODE=args.OUTPUT_LANG,
 		)
 
-		def translate_full(full_text: str) -> str:
+		if args.exclude:
+			REG_CLEAN.append((r"|".join(map(re.escape, args.exclude)), re.IGNORECASE))
+
+		def translate_text(text: str) -> str:
+			if not text or not text.strip():
+				return text
+			cleaned = clean_text(REG_CLEAN, text)
+			# print(cleaned)
+			if not cleaned:
+				return text
+			if args.verbose:
+				print(f"\n\x1b[37m{text}\x1b[0m")
 			messages = [
 				{"role": "system", "content": system_prompt},
-				{"role": "user", "content": full_text}
+				{"role": "user", "content": text}
 			]
 			response = ollama.chat(
 				model=f"{LLM_MODEL}:{args.tag}",
 				messages=messages
 			)
-			return response['message']['content'].strip()
+			out = response['message']['content'].strip()
+			if args.verbose:
+				print(out)
+			return out
 
 		def source_lang() -> str:
 			if args.INPUT_LANG in LANGUAGE_AGNOSTIC:
@@ -137,7 +153,7 @@ if __name__ == '__main__':
 				print(f"target: {LANG_DICT[args.OUTPUT_LANG]} ({args.OUTPUT_LANG})")
 				print(f"prompt: {prompt_type}")
 				print()
-			print(translate_full(args.text))
+			print(translate_text(args.text))
 			sys.exit(0)
 
 		output = args.output_file.format(
@@ -174,7 +190,7 @@ if __name__ == '__main__':
 
 	def translate_file(file: Path):
 		if TRANSLATE_DISPATCHER.get(file.suffix.lower()):
-			TRANSLATE_DISPATCHER[file.suffix.lower()](file, translate_full, args.verbose)
+			TRANSLATE_DISPATCHER[file.suffix.lower()](file, translate_text, args.verbose)
 
 	try:
 		if args.verbose:

@@ -41,10 +41,10 @@ def translate_md(path: Path, translate_fn: Callable[[str], str], verbose: bool=F
         m = re.match(r"^(\s*(?:[-*+]\s+|\d+\.\s+|#{1,6}\s+|>\s+))(.+)$", stripped)
         if m:
             prefix, text = m.groups()
-            translated = translate_text(text.strip(), translate_fn, verbose=verbose)
+            translated = translate_fn(text.strip())
             out.append(prefix + translated + "\n")
         else:
-            out.append(translate_text(stripped, translate_fn, verbose=verbose) + "\n")
+            out.append(translate_fn(stripped) + "\n")
 
     with open(path, "w", encoding="utf-8") as f:
         f.writelines(out)
@@ -89,7 +89,7 @@ def translate_latex(path: Path, translate_fn: Callable[[str], str], verbose: boo
         else:
             # translate only non-empty visible text
             if part.strip():
-                out.append(translate_text(part, translate_fn, verbose=verbose))
+                out.append(translate_fn(part))
             else:
                 out.append(part)
 
@@ -111,7 +111,7 @@ def translate_txt(path: Path, translate_fn: Callable[[str], str], verbose: bool=
 	for line in track(lines):
 		stripped = line.strip()
 		if stripped and clean_text(REG_CLEAN, stripped).strip():
-			out.append(translate_text(line.rstrip("\n"), translate_fn, verbose=verbose) + "\n")
+			out.append(translate_fn(line.rstrip("\n")) + "\n")
 		else:
 			out.append(line)
 
@@ -134,7 +134,7 @@ def translate_csv(path: Path, translate_fn: Callable[[str], str], verbose: bool=
             new_row = []
             for cell in row:
                 if cell and clean_text(REG_CLEAN, cell).strip():
-                    new_row.append(translate_text(cell, translate_fn, verbose=verbose))
+                    new_row.append(translate_fn(cell))
                 else:
                     new_row.append(cell)
             rows.append(new_row)
@@ -151,9 +151,9 @@ def translate_xml(path: Path, translate_fn: Callable[[str], str], verbose: bool=
 
     for el in track(root.iter()):
         if el.text and el.text.strip() and clean_text(REG_CLEAN, el.text).strip():
-            el.text = translate_text(el.text, translate_fn, verbose=verbose)
+            el.text = translate_fn(el.text)
         if el.tail and el.tail.strip() and clean_text(REG_CLEAN, el.tail).strip():
-            el.tail = translate_text(el.tail, translate_fn, verbose=verbose)
+            el.tail = translate_fn(el.tail)
 
     tree.write(str(path), encoding="utf-8", xml_declaration=True, pretty_print=False)
 
@@ -170,9 +170,9 @@ def translate_html(path: Path, translate_fn: Callable[[str], str], verbose: bool
         if tag in skip_tags:
             continue
         if el.text and el.text.strip() and clean_text(REG_CLEAN, el.text).strip():
-            el.text = translate_text(el.text, translate_fn, verbose=verbose)
+            el.text = translate_fn(el.text)
         if el.tail and el.tail.strip() and clean_text(REG_CLEAN, el.tail).strip():
-            el.tail = translate_text(el.tail, translate_fn, verbose=verbose)
+            el.tail = translate_fn(el.tail)
 
     html_str = etree.tostring(tree, encoding="unicode", method="html")
     with open(path, "w", encoding="utf-8") as f:
