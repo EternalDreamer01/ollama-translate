@@ -1,8 +1,11 @@
 import ollama
 from lxml import etree
-import re
+import re, json
 from conf import *
 from typing import Callable
+from os import get_terminal_size
+from sys import stderr
+from argparse import ArgumentTypeError
 
 def pull_model(model: str):
 	try:
@@ -88,3 +91,54 @@ def clean_text(rgx_list: list, text: str):
         else:
             new_text = re.sub(rgx_match[0], '', new_text, flags=rgx_match[1])
     return new_text.strip()
+
+LANG_DICT = {}
+with open('lang.json', encoding="utf-8") as json_file:
+	LANG_DICT = json.load(json_file)
+
+def validation_lang(lang: str, ext: list[str] = []) -> str:
+	lang = lang.lower()
+	if lang in ext:
+		return lang
+	if lang not in LANG_DICT:
+		raise ArgumentTypeError(f"Language '{lang}' isn't valid")
+	return lang
+
+def show_langs(shorten: bool = True) -> None:
+	l = [f"{k} {v}" for k, v in LANG_DICT.items() if not shorten or len(k) == 2]
+	txt_langs = ""
+
+	def get_nth(index: int) -> str:
+		return l[index] if index < len(l) else ""
+
+	MAX_CELL_WIDTH = len(max(l, key=len)) + 1
+	ELEMENTS_ONELINE = (get_terminal_size().columns - 1) // MAX_CELL_WIDTH
+	if ELEMENTS_ONELINE < 1:
+		ELEMENTS_ONELINE = 1
+	if ELEMENTS_ONELINE > 8:
+		ELEMENTS_ONELINE = 8
+
+	for i in range(0, len(l), ELEMENTS_ONELINE):
+		txt_langs += f"{''.join([f'%-{MAX_CELL_WIDTH}s' for _ in range(ELEMENTS_ONELINE)])}\n" % tuple(get_nth(i + j) for j in range(ELEMENTS_ONELINE))
+	print(txt_langs)
+
+def eprint(*args):
+	print(f"Error:", *args, file=stderr)
+
+def file_read(path: str) -> str:
+	with open(path, "r", encoding="utf-8", errors="ignore") as f:
+		return f.read()
+
+def file_readlines(path: str) -> list[str]:
+	with open(path, "r", encoding="utf-8", errors="ignore") as f:
+		return f.readlines()
+
+def file_write(path: str, text: str) -> str:
+	with open(path, "w", encoding="utf-8") as f:
+		f.write(text)
+	return text
+
+def file_writelines(path: str, text: list[str]) -> str:
+	with open(path, "w", encoding="utf-8", newline="") as f:
+		f.writelines(text)
+	return "".join(text)

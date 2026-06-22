@@ -30,7 +30,7 @@ REG_CLEAN = [
     r"[\w_\-\.]+@([\w\-]+\.)+[\w\-]{2,}",					# email
     r"(https://[^ ]{3,}|[^ ]+\.com\/?[^ ]*)",				# url/domain
     (r"[$&+,:;=?@#|'<>.^*()%!\-\u2013\u2014]", re.UNICODE),	# special character
-    r"[\d \+]{5,}",											# phone number
+    r"\+?(\(\d{3,6}\))?[-.\s]?\d{1,8}[-.\s]?\d{1,8}",		# phone number
     r"[A-Z0-9]{3,}",										# capital name
     r"\d+",													# number
     (r"\b(" + r'|'.join(EXCLUDED_WORDS) + r")\b", re.IGNORECASE)

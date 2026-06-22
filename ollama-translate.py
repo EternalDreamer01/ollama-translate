@@ -13,9 +13,7 @@
 #
 ################################################################################
 
-from lxml import etree
-import argparse, zipfile, sys, os, tempfile, shutil, time, datetime, ollama, re, json, csv, html
-from rich.progress import track
+import argparse, sys, os, shutil, time, datetime, ollama, re, json, csv
 from pathlib import Path
 from time import localtime, strftime
 from prompt import PROMPT
@@ -23,39 +21,155 @@ from utils import pull_model
 from conf import *
 from format import *
 
-def eprint(*args):
-	print(f"Error:", *args, file=sys.stderr)
+
+def main(INPUT_LANG: str, OUTPUT_LANG: str, INPUT_FILE: Path|None=None, OUTPUT_FILE: str|None=None, TEXT: str|None=None, recursive: bool=False, exclude: list[str]=[], tag: str=LLM_MODEL_TAG_DEFAULT, prompt: str="accurate", force_overwrite: bool=False, quiet: bool=False, retb:bool=False, verbose: bool=False):
+	try:
+		if (INPUT_FILE is None) and (TEXT is None):
+			raise argparse.ArgumentError("INPUT_FILE or -t/--text required")
+		elif (INPUT_FILE is not None) and (TEXT is not None):
+			raise argparse.ArgumentError("Provide either INPUT_FILE or -t/--text, but not both")
+		if INPUT_LANG == OUTPUT_LANG:
+			raise argparse.ArgumentError("INPUT_LANG is the same as OUTPUT_LANG")
+
+		pull_model(f"{LLM_MODEL}:{tag}")
+
+		# print(args)
+		# INPUT_FILE = INPUT_FILE[0]
+
+		prompt_type = "accurate_any" if INPUT_LANG in LANGUAGE_AGNOSTIC else prompt
+
+		system_prompt = PROMPT[prompt_type].format(
+			SOURCE_LANG=LANG_DICT.get(INPUT_LANG, INPUT_LANG),
+			SOURCE_CODE=INPUT_LANG,
+			TARGET_LANG=LANG_DICT.get(OUTPUT_LANG, OUTPUT_LANG),
+			TARGET_CODE=OUTPUT_LANG,
+		)
+
+		if exclude:
+			REG_CLEAN.insert(0, (r"|".join(map(re.escape, exclude)), re.IGNORECASE))
+
+		# verbose = True
+		def translate_text(text: str) -> str:
+			if not text or not text.strip():
+				return text
+			cleaned = clean_text(REG_CLEAN, text)
+			# print(cleaned)
+			if not cleaned:
+				return text
+			if verbose:
+				print(f"\n\x1b[37m{text}\x1b[0m")
+			messages = [
+				{"role": "system", "content": system_prompt},
+				{"role": "user", "content": text}
+			]
+			response = ollama.chat(
+				model=f"{LLM_MODEL}:{tag}",
+				messages=messages
+			)
+			out = response['message']['content'].strip()
+			if verbose:
+				print(out)
+			return out
+
+		def source_lang() -> str:
+			if INPUT_LANG in LANGUAGE_AGNOSTIC:
+				return "agnostic"
+			return f"{LANG_DICT.get(INPUT_LANG, INPUT_LANG)} ({INPUT_LANG})"
+
+		if TEXT:
+			if verbose:
+				print(f"model:  {LLM_MODEL}:{tag}")
+				print(f"source: {source_lang()}")
+				print(f"target: {LANG_DICT.get(OUTPUT_LANG, OUTPUT_LANG)} ({OUTPUT_LANG})")
+				print(f"prompt: {prompt_type}")
+				print()
+			return translate_text(TEXT)
+
+		output = OUTPUT_FILE.format(
+			n=INPUT_FILE.stem,
+			l=OUTPUT_LANG
+		) if OUTPUT_FILE != "/dev/null" else "/dev/null"
+
+		# Append extension if not already present
+		if INPUT_FILE.is_file() and output != "/dev/null" and Path(output).suffix.lower() != INPUT_FILE.suffix.lower():
+			output += INPUT_FILE.suffix.lower()
+
+
+		if not force_overwrite and Path(output).exists():
+			eprint(f"File '{output}' already exists")
+			a = ""
+			while a != "y":
+				a = input("Do you want to delete this file ? [y/N] ").lower()
+				if a == "n":
+					sys.exit(0)
+			print()
+
+		if INPUT_FILE.is_file():
+			shutil.copyfile(INPUT_FILE, output)
+
+		elif INPUT_FILE.is_dir():
+			if recursive != True:
+				raise RuntimeError(f"'{INPUT_FILE}' is a directory, pass -r/--recursive if you intended to translate all supported files in this directory")
+			shutil.copytree(INPUT_FILE, output, dirs_exist_ok=True)
+
+		else:
+			raise RuntimeError(f"Unknown type of '{INPUT_FILE}'")
+
+	except argparse.ArgumentError as e:
+		eprint(e)
+		sys.exit(1)
+	except RuntimeError as e:
+		eprint(e)
+		sys.exit(1)
+
+	def translate_file(file: Path) -> str|None:
+		if TRANSLATE_DISPATCHER.get(file.suffix.lower()):
+			return TRANSLATE_DISPATCHER[file.suffix.lower()](file, translate_text)
+
+	ret = ""
+	ki = False
+	try:
+		if verbose:
+			print(f"model:  {LLM_MODEL}:{tag}")
+			print(f"source: {source_lang()}")
+			print(f"target: {LANG_DICT.get(OUTPUT_LANG, OUTPUT_LANG)} ({OUTPUT_LANG})")
+			print(f"prompt: {prompt_type}")
+			print(f"output: {output}")
+			# print()
+
+		start_time = time.time()
+		if not quiet:
+			print(strftime("time:   %Y-%m-%d %H:%M:%S", localtime()))
+		# print(output)
+		if INPUT_FILE.is_file():
+			output = Path(output)
+			if not TRANSLATE_DISPATCHER.get(INPUT_FILE.suffix.lower()):
+				raise ValueError(f"Unsupported or unimplemented format: {INPUT_FILE.suffix.lower()}")
+			ret = translate_file(output)
+
+		else:
+			for root, dirs, files in os.walk(output):
+				for f in files:
+					# print(output+"/"+f, dirs)
+					ret += translate_file(Path(output+"/"+f))
+					ret += "\v"
+
+	except ValueError as e:
+		eprint(e)
+	except KeyboardInterrupt:
+		ki = True
+
+	if not quiet:
+		print()
+		print(strftime("%Y-%m-%d %H:%M:%S", localtime()))
+		print("Elapsed time: ", str(datetime.timedelta(seconds=int(time.time() - start_time))))
+
+	if ki:
+		raise KeyboardInterrupt
+
+	return (ret or "").strip()
 
 if __name__ == '__main__':
-	def validation_lang(lang: str, ext: list[str] = []):
-		lang = lang.lower()
-		if lang in ext:
-			return lang
-		if lang not in LANG_DICT:
-			raise argparse.ArgumentTypeError(f"Language '{lang}' isn't valid")
-		return lang
-
-	def show_langs(shorten: bool = True) -> None:
-		l = [f"{k} {v}" for k, v in LANG_DICT.items() if not shorten or len(k) == 2]
-		txt_langs = ""
-
-		def get_nth(index: int) -> str:
-			return l[index] if index < len(l) else ""
-
-		MAX_CELL_WIDTH = len(max(l, key=len)) + 1
-		ELEMENTS_ONELINE = (os.get_terminal_size().columns - 1) // MAX_CELL_WIDTH
-		if ELEMENTS_ONELINE < 1:
-			ELEMENTS_ONELINE = 1
-		if ELEMENTS_ONELINE > 8:
-			ELEMENTS_ONELINE = 8
-
-		for i in range(0, len(l), ELEMENTS_ONELINE):
-			txt_langs += f"{''.join([f'%-{MAX_CELL_WIDTH}s' for _ in range(ELEMENTS_ONELINE)])}\n" % tuple(get_nth(i + j) for j in range(ELEMENTS_ONELINE))
-		print(txt_langs)
-
-	LANG_DICT = {}
-	with open('lang.json', encoding="utf-8") as json_file:
-		LANG_DICT = json.load(json_file)
 
 	parser_langs = argparse.ArgumentParser(add_help=False)
 	group_list = parser_langs.add_mutually_exclusive_group()
@@ -80,10 +194,10 @@ if __name__ == '__main__':
 
 
 	group_parser = parser.add_mutually_exclusive_group()
-	group_parser.add_argument('-t', '--text', type=str, help="text to translate")
+	group_parser.add_argument('-t', '--text', type=str, dest="TEXT", help="text to translate")
 	group_parser.add_argument('-r', '--recursive', action="store_true", help="translate recursively all supported files in INPUT_FILE")
 
-	parser.add_argument('-o', '--output-file', default=OUTPUT_FILE_DEFAULT, dest="output_file", type=str,
+	parser.add_argument('-o', '--output-file', default=OUTPUT_FILE_DEFAULT, dest="OUTPUT_FILE", type=str,
 						help='Output basename file translated. Possible formats :\n  {n} basename\n  {l} target language\nDefault: %s' % OUTPUT_FILE_DEFAULT)
 	parser.add_argument('-e', '--exclude', type=lambda s: [t.strip() for t in s.split(',')], help="Comma-separated list of words to filter out")
 	parser.add_argument('--tag', type=str, default=LLM_MODEL_TAG_DEFAULT, help="model's tag")
@@ -91,135 +205,15 @@ if __name__ == '__main__':
 	parser.add_argument('-v', '--verbose', action="store_true", help="show original and translated texts")
 	args = parser.parse_args()
 
-	# print(args)
+	# print(args.__dict__)
 
-	if (args.INPUT_FILE is None) and (args.text is None):
-		parser.error("INPUT_FILE or -t/--text required")
-	elif (args.INPUT_FILE is not None) and (args.text is not None):
-		parser.error("Provide either INPUT_FILE or -t/--text, but not both")
-
-	try:
-		pull_model(f"{LLM_MODEL}:{args.tag}")
-
-		# print(args)
-		args.INPUT_LANG = args.INPUT_LANG[0]
-		args.OUTPUT_LANG = args.OUTPUT_LANG[0]
-		# args.INPUT_FILE = args.INPUT_FILE[0]
-
-
-		prompt_type = "accurate_any" if args.INPUT_LANG in LANGUAGE_AGNOSTIC else args.prompt
-
-		system_prompt = PROMPT[prompt_type].format(
-			SOURCE_LANG=LANG_DICT.get(args.INPUT_LANG, args.INPUT_LANG),
-			SOURCE_CODE=args.INPUT_LANG,
-			TARGET_LANG=LANG_DICT.get(args.OUTPUT_LANG, args.OUTPUT_LANG),
-			TARGET_CODE=args.OUTPUT_LANG,
-		)
-
-		if args.exclude:
-			REG_CLEAN.insert(0, (r"|".join(map(re.escape, args.exclude)), re.IGNORECASE))
-
-		def translate_text(text: str) -> str:
-			if not text or not text.strip():
-				return text
-			cleaned = clean_text(REG_CLEAN, text)
-			# print(cleaned)
-			if not cleaned:
-				return text
-			if args.verbose:
-				print(f"\n\x1b[37m{text}\x1b[0m")
-			messages = [
-				{"role": "system", "content": system_prompt},
-				{"role": "user", "content": text}
-			]
-			response = ollama.chat(
-				model=f"{LLM_MODEL}:{args.tag}",
-				messages=messages
-			)
-			out = response['message']['content'].strip()
-			if args.verbose:
-				print(out)
-			return out
-
-		def source_lang() -> str:
-			if args.INPUT_LANG in LANGUAGE_AGNOSTIC:
-				return "agnostic"
-			return f"{LANG_DICT[args.INPUT_LANG]} ({args.INPUT_LANG})"
-
-		if args.text:
-			if args.verbose:
-				print(f"model:  {LLM_MODEL}:{args.tag}")
-				print(f"source: {source_lang()}")
-				print(f"target: {LANG_DICT[args.OUTPUT_LANG]} ({args.OUTPUT_LANG})")
-				print(f"prompt: {prompt_type}")
-				print()
-			print(translate_text(args.text))
-			sys.exit(0)
-
-		output = args.output_file.format(
-			n=args.INPUT_FILE.stem,
-			l=args.OUTPUT_LANG
-		)
-		if args.INPUT_FILE.is_file():
-			output += args.INPUT_FILE.suffix.lower()
-
-
-		if Path(output).exists():
-			eprint(f"File '{output}' already exists")
-			a = ""
-			while a != "y":
-				a = input("Do you want to delete this file ? [y/N] ").lower()
-				if a == "n":
-					sys.exit(0)
-			print()
-
-		if args.INPUT_FILE.is_file():
-			shutil.copyfile(args.INPUT_FILE, output)
-
-		elif args.INPUT_FILE.is_dir():
-			if args.recursive != True:
-				raise RuntimeError(f"'{args.INPUT_FILE}' is a directory, pass -r/--recursive if you intended to translate all supported files in this directory")
-			shutil.copytree(args.INPUT_FILE, output, dirs_exist_ok=True)
-
-		else:
-			raise RuntimeError(f"Unknown type of '{args.INPUT_FILE}'")
-
-	except RuntimeError as e:
-		eprint(e)
-		sys.exit(1)
-
-	def translate_file(file: Path):
-		if TRANSLATE_DISPATCHER.get(file.suffix.lower()):
-			TRANSLATE_DISPATCHER[file.suffix.lower()](file, translate_text, args.verbose)
+	args.INPUT_LANG = args.INPUT_LANG[0]
+	args.OUTPUT_LANG = args.OUTPUT_LANG[0]
+	del args.list
 
 	try:
-		if args.verbose:
-			print(f"model:  {LLM_MODEL}:{args.tag}")
-			print(f"source: {source_lang()}")
-			print(f"target: {LANG_DICT[args.OUTPUT_LANG]} ({args.OUTPUT_LANG})")
-			print(f"prompt: {prompt_type}")
-			print(f"output: {output}")
-			# print()
-
-		start_time = time.time()
-		print(strftime("time:   %Y-%m-%d %H:%M:%S", localtime()))
-		if args.INPUT_FILE.is_file():
-			output = Path(output)
-			if not TRANSLATE_DISPATCHER.get(output.suffix.lower()):
-				raise ValueError(f"Unsupported or unimplemented format: {output.suffix.lower()}")
-			translate_file(output)
-
-		else:
-			for root, dirs, files in os.walk(output):
-				for f in files:
-					# print(output+"/"+f, dirs)
-					translate_file(Path(output+"/"+f))
-
-	except ValueError as e:
-		eprint(e)
+		text = main(**args.__dict__)
+		if args.TEXT is not None and text:
+			print(text)
 	except KeyboardInterrupt:
 		pass
-
-	print()
-	print(strftime("%Y-%m-%d %H:%M:%S", localtime()))
-	print("Elapsed time: ", str(datetime.timedelta(seconds=int(time.time() - start_time))))

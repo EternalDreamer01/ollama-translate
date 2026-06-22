@@ -24,7 +24,7 @@ except ImportError:
 	Presentation = None
 
 
-def translate_pdf(path: Path, translate_fn: Callable[[str], str], verbose: bool=False):
+def translate_pdf(path: Path, translate_fn: Callable[[str], str]):
 	from pypdf import PdfReader
 	from reportlab.lib.pagesizes import A4
 	from reportlab.pdfgen import canvas
@@ -97,7 +97,7 @@ def translate_pdf(path: Path, translate_fn: Callable[[str], str], verbose: bool=
 # ---------------------------
 # ODT / ODS / ODP
 # ---------------------------
-def edit_ooo_zip_inplace(path, translate_fn, tags, content_name="content.xml", verbose: bool=False):
+def edit_ooo_zip_inplace(path, translate_fn, tags, content_name="content.xml"):
     with zipfile.ZipFile(path, 'r') as z:
         names = z.namelist()
         if content_name not in names:
@@ -111,7 +111,7 @@ def edit_ooo_zip_inplace(path, translate_fn, tags, content_name="content.xml", v
     for tag in tags:
         paras.extend(root.findall(f'.//{tag}', NS))
 
-    for p in track(paras):
+    for p in track(paras, f"Translating {path}..."):
         orig = paragraph_text(p).strip()
         if orig and clean_text(REG_CLEAN, orig).strip():
             set_mixed_text(p, translate_fn(orig))
@@ -131,28 +131,28 @@ def edit_ooo_zip_inplace(path, translate_fn, tags, content_name="content.xml", v
             os.remove(tmp_path)
 
 
-def translate_odt(path: Path, translate_fn: Callable[[str], str], verbose: bool=False):
-    edit_ooo_zip_inplace(path, translate_fn, tags=('text:p', 'text:h'), verbose=verbose)
+def translate_odt(path: Path, translate_fn: Callable[[str], str]):
+    edit_ooo_zip_inplace(path, translate_fn, tags=('text:p', 'text:h'))
 
 
-def translate_ods(path: Path, translate_fn: Callable[[str], str], verbose: bool=False):
-    edit_ooo_zip_inplace(path, translate_fn, tags=('text:p',), content_name="content.xml", verbose=verbose)
+def translate_ods(path: Path, translate_fn: Callable[[str], str]):
+    edit_ooo_zip_inplace(path, translate_fn, tags=('text:p',), content_name="content.xml")
 
 
-def translate_odp(path: Path, translate_fn: Callable[[str], str], verbose: bool=False):
-    edit_ooo_zip_inplace(path, translate_fn, tags=('text:p', 'text:h'), verbose=verbose)
+def translate_odp(path: Path, translate_fn: Callable[[str], str]):
+    edit_ooo_zip_inplace(path, translate_fn, tags=('text:p', 'text:h'))
 
 
 # ---------------------------
 # DOCX
 # ---------------------------
-def translate_docx(path: Path, translate_fn: Callable[[str], str], verbose: bool=False):
+def translate_docx(path: Path, translate_fn: Callable[[str], str]):
 	if Document is None:
 		raise ImportError("python-docx is required for .docx files")
 	doc = Document(str(path))
 
 	if doc.paragraphs:
-		for p in track(doc.paragraphs, "Paragraphs..."):
+		for p in track(doc.paragraphs, f"Translating {path}... | Paragraphs"):
 			txt = p.text.strip()
 			if txt and clean_text(REG_CLEAN, txt).strip():
 				p.text = translate_fn(txt)
@@ -161,7 +161,7 @@ def translate_docx(path: Path, translate_fn: Callable[[str], str], verbose: bool
 		tables_len = len(doc.tables)
 		for i in range(tables_len):
 			table = doc.tables[i]
-			for row in track(table.rows, description=f"Table {i}/{tables_len}"):
+			for row in track(table.rows, f"Translating {path}... | Table {i}/{tables_len}"):
 				for cell in row.cells:
 					for p in cell.paragraphs:
 						txt = p.text.strip()
@@ -174,7 +174,7 @@ def translate_docx(path: Path, translate_fn: Callable[[str], str], verbose: bool
 # ---------------------------
 # XLSX
 # ---------------------------
-def translate_xlsx(path: Path, translate_fn: Callable[[str], str], verbose: bool=False):
+def translate_xlsx(path: Path, translate_fn: Callable[[str], str]):
 	if load_workbook is None:
 		raise ImportError("openpyxl is required for .xlsx files")
 	wb = load_workbook(str(path))
@@ -182,7 +182,7 @@ def translate_xlsx(path: Path, translate_fn: Callable[[str], str], verbose: bool
 	worksheets_len = len(wb.worksheets)
 	for i in range(worksheets_len):
 		rows = wb.worksheets[i].iter_rows()
-		for row in track(rows, description=f"Table {i}/{worksheets_len}"):
+		for row in track(rows, f"Translating {path}... | Table {i}/{worksheets_len}"):
 			for cell in row:
 				if isinstance(cell.value, str) and cell.value.strip():
 					if clean_text(REG_CLEAN, cell.value).strip():
@@ -194,7 +194,7 @@ def translate_xlsx(path: Path, translate_fn: Callable[[str], str], verbose: bool
 # ---------------------------
 # PPTX
 # ---------------------------
-def translate_pptx(path: Path, translate_fn: Callable[[str], str], verbose: bool=False):
+def translate_pptx(path: Path, translate_fn: Callable[[str], str]):
 	if Presentation is None:
 		raise ImportError("python-pptx is required for .pptx files")
 	prs = Presentation(str(path))
@@ -207,7 +207,7 @@ def translate_pptx(path: Path, translate_fn: Callable[[str], str], verbose: bool
 					if txt and clean_text(REG_CLEAN, txt).strip():
 						run.text = translate_fn(txt)
 
-	for slide in track(prs.slides):
+	for slide in track(prs.slides, f"Translating {path}... | Paragraphs"):
 		for shape in slide.shapes:
 			translate_shape(shape)
 
