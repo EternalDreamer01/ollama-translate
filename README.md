@@ -53,21 +53,24 @@ List available languages:
 ./ot.py -ll	# Full
 ```
 
-### Advanced usage
+## Advanced usage
 
-#### Verbose
+### Verbose
 Show original and translated texts ;
 ```sh
 ./ot.py en es document.docx -v
 ```
 
-#### Optimisation
+### Optimisation
+#### Exclusions
+
+##### Preprocessing filter
 To translate your document faster and more accurately ;
 you might exclude words (**insensitive case strings**) that you know cannot/shouldn't be translated (e.g, Programming Language, Company Name, Conference Name) ;
 ```sh
-./ot.py en es document.docx -e "Turing, Einstein, NoSQL, Internet of Things Journal"
+./ot.py en es document.docx -e "Turing, Einstein, NoSQL, USENIX"
 ```
-If a string appear to not contain any relevant word, it will be kept as is.
+If a string appear to not contain any relevant word, it will be kept as is without being passed to LLM.
 - __Note:__ Applicable to `-t/--text`
 - __Note 2:__ These exclusions are applied before any other default exclusion, be careful not to overwrite/overlap default exclusions, e.g, `Albert Einstein` would overlap `einstein.com/`
 - __Note 3:__ The word is expected to match word boundaries (`\b`), it can't terminate in the middle of a word (e.g, `Turin` won't match `Turing`)
@@ -76,5 +79,20 @@ Default excluded expressions (regex) (cf. [conf.py](./conf.py)) :
 - Emails
 - URLs/domains
 - Phone numbers
-- Digits and capitals being more than 3 characters 
+- Digits and capitals being more than 3 characters
 - Numbers
+
+
+##### Prompt exclusion ⚠️
+If a string appear to contain relevant words even after preprocessing filter,
+prompt exclusion can be used to prevent expressions from being translated by the LLM.
+This would typically include expressions that have possible translation e.g, a conference name ;
+
+```sh
+./ot.py - es document.docx -E "Internet of Things Journal"
+# Possible to use with `-e`
+./ot.py en es document.docx -e "Turing" -E "Internet of Things Journal"
+```
+
+- __Note:__ List passed to `-E` is also used as a preprocessing filter (`-e`)
+- __Note 2:__ **Prefer `-e` when possible**

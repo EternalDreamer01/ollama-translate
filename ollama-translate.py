@@ -13,7 +13,7 @@
 #
 ################################################################################
 
-import argparse, sys, os, shutil, time, datetime, ollama, re, json, csv
+import argparse, sys, os, shutil, time, datetime, ollama, re, json
 from pathlib import Path
 from time import localtime, strftime
 from prompt import PROMPT
@@ -22,28 +22,33 @@ from conf import *
 from format import *
 
 
-def main(INPUT_LANG: str, OUTPUT_LANG: str, INPUT_FILE: Path|None=None, OUTPUT_FILE: str|None=None, TEXT: str|None=None, recursive: bool=False, exclude: list[str]=[], tag: str=LLM_MODEL_TAG_DEFAULT, prompt: str="accurate", force_overwrite: bool=False, quiet: bool=False, context_aware: int=0, verbose: bool=False):
+def main(INPUT_LANG: str, OUTPUT_LANG: str, INPUT_FILE: Path|None=None, OUTPUT_FILE: str|None=None, TEXT: str|None=None, recursive: bool=False, exclude: list[str]=[], exclude_in_prompt: list[str]=[], tag: str=LLM_MODEL_TAG_DEFAULT, prompt: str="accurate", force_overwrite: bool=False, quiet: bool=False, context_aware: int=0, verbose: bool=False):
 	try:
 		if (INPUT_FILE is None) and (TEXT is None):
-			raise argparse.ArgumentError("INPUT_FILE or -t/--text required")
+			raise argparse.ArgumentError(None, "INPUT_FILE or -t/--text required")
 		elif (INPUT_FILE is not None) and (TEXT is not None):
-			raise argparse.ArgumentError("Provide either INPUT_FILE or -t/--text, but not both")
+			raise argparse.ArgumentError(None, "Provide either INPUT_FILE or -t/--text, but not both")
 		if INPUT_LANG == OUTPUT_LANG:
-			raise argparse.ArgumentError("INPUT_LANG is the same as OUTPUT_LANG")
+			raise argparse.ArgumentError(None, "INPUT_LANG is the same as OUTPUT_LANG")
 
 		pull_model(f"{LLM_MODEL}:{tag}")
 
 		prompt_type = "accurate_any" if INPUT_LANG in LANGUAGE_AGNOSTIC else prompt
+
+		OTHER_INSTRUCTION = ""
+		if exclude_in_prompt:
+			OTHER_INSTRUCTION = ("11." if prompt_type == "accurate" else "10.") + " Exceptions, do not translate the following words (keep them as-is): "+', '.join(exclude_in_prompt)
 
 		system_prompt = PROMPT[prompt_type].format(
 			SOURCE_LANG=LANG_DICT.get(INPUT_LANG, INPUT_LANG),
 			SOURCE_CODE=INPUT_LANG,
 			TARGET_LANG=LANG_DICT.get(OUTPUT_LANG, OUTPUT_LANG),
 			TARGET_CODE=OUTPUT_LANG,
+			OTHER_INSTRUCTION=OTHER_INSTRUCTION
 		)
 
-		if exclude:
-			REG_CLEAN.insert(0, (r"|".join(map(re.escape, exclude)), re.IGNORECASE))
+		if exclude or exclude_in_prompt:
+			REG_CLEAN.insert(0, (r"|".join(map(re.escape, exclude + exclude_in_prompt)), re.IGNORECASE))
 
 		history = []
 		# verbose = True
@@ -91,6 +96,7 @@ def main(INPUT_LANG: str, OUTPUT_LANG: str, INPUT_FILE: Path|None=None, OUTPUT_F
 				print(f"source: {source_lang()}")
 				print(f"target: {LANG_DICT.get(OUTPUT_LANG, OUTPUT_LANG)} ({OUTPUT_LANG})")
 				print(f"prompt: {prompt_type}")
+				print(f"oth in: {OTHER_INSTRUCTION}")
 				print()
 			return translate_text(TEXT)
 
@@ -143,6 +149,7 @@ def main(INPUT_LANG: str, OUTPUT_LANG: str, INPUT_FILE: Path|None=None, OUTPUT_F
 			print(f"target: {LANG_DICT.get(OUTPUT_LANG, OUTPUT_LANG)} ({OUTPUT_LANG})")
 			print(f"prompt: {prompt_type}")
 			print(f"output: {output}")
+			print(f"oth in: {OTHER_INSTRUCTION}")
 			# print()
 
 		start_time = time.time()
@@ -205,7 +212,8 @@ if __name__ == '__main__':
 
 	parser.add_argument('-o', '--output-file', default=OUTPUT_FILE_DEFAULT, metavar="FILE", dest="OUTPUT_FILE", type=str,
 						help='Output basename file translated. Possible formats :\n  {n} basename\n  {l} target language\nDefault: %s' % OUTPUT_FILE_DEFAULT)
-	parser.add_argument('-e', '--exclude', metavar="WORDS", type=lambda s: [t.strip() for t in s.split(',')], help="Comma-separated list of words to filter out")
+	parser.add_argument('-e', '--exclude', metavar="WORDS", type=lambda s: [t.strip() for t in s.split(',')], help="Comma-separated list of words to filter out before attempting to translate")
+	parser.add_argument('-E', '--exclude-prompt', dest="exclude_in_prompt", metavar="WORDS", type=lambda s: [t.strip() for t in s.split(',')], help="Comma-separated list of words to filter out before attempting to translate, AND for translating (explicitly exclude in prompt)")
 	parser.add_argument('--tag', type=str, default=LLM_MODEL_TAG_DEFAULT, help="model's tag")
 	parser.add_argument('--context-aware', metavar="LENGTH", type=int, default=0, help="Context aware can increase translation accuracy")
 	parser.add_argument('--prompt', choices=["fast", "balance", "accurate"], type=str, default="accurate", help="type of prompt")
