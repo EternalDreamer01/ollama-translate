@@ -22,7 +22,7 @@ from conf import *
 from format import *
 
 
-def main(INPUT_LANG: str, OUTPUT_LANG: str, INPUT_FILE: Path|None=None, OUTPUT_FILE: str|None=None, TEXT: str|None=None, recursive: bool=False, exclude: list[str]=[], tag: str=LLM_MODEL_TAG_DEFAULT, prompt: str="accurate", force_overwrite: bool=False, quiet: bool=False, retb:bool=False, verbose: bool=False):
+def main(INPUT_LANG: str, OUTPUT_LANG: str, INPUT_FILE: Path|None=None, OUTPUT_FILE: str|None=None, TEXT: str|None=None, recursive: bool=False, exclude: list[str]=[], tag: str=LLM_MODEL_TAG_DEFAULT, prompt: str="accurate", force_overwrite: bool=False, quiet: bool=False, context_aware: int=0, verbose: bool=False):
 	try:
 		if (INPUT_FILE is None) and (TEXT is None):
 			raise argparse.ArgumentError("INPUT_FILE or -t/--text required")
@@ -32,9 +32,6 @@ def main(INPUT_LANG: str, OUTPUT_LANG: str, INPUT_FILE: Path|None=None, OUTPUT_F
 			raise argparse.ArgumentError("INPUT_LANG is the same as OUTPUT_LANG")
 
 		pull_model(f"{LLM_MODEL}:{tag}")
-
-		# print(args)
-		# INPUT_FILE = INPUT_FILE[0]
 
 		prompt_type = "accurate_any" if INPUT_LANG in LANGUAGE_AGNOSTIC else prompt
 
@@ -48,6 +45,7 @@ def main(INPUT_LANG: str, OUTPUT_LANG: str, INPUT_FILE: Path|None=None, OUTPUT_F
 		if exclude:
 			REG_CLEAN.insert(0, (r"|".join(map(re.escape, exclude)), re.IGNORECASE))
 
+		history = []
 		# verbose = True
 		def translate_text(text: str) -> str:
 			if not text or not text.strip():
@@ -59,6 +57,13 @@ def main(INPUT_LANG: str, OUTPUT_LANG: str, INPUT_FILE: Path|None=None, OUTPUT_F
 			if verbose:
 				print(f"\n\x1b[37m{text}\x1b[0m")
 			messages = [
+				msg
+				for i, o in history
+				for msg in [
+					{"role": "user", "content": i},
+					{"role": "assistant", "content": o},
+				]
+			] + [
 				{"role": "system", "content": system_prompt},
 				{"role": "user", "content": text}
 			]
@@ -67,6 +72,10 @@ def main(INPUT_LANG: str, OUTPUT_LANG: str, INPUT_FILE: Path|None=None, OUTPUT_F
 				messages=messages
 			)
 			out = response['message']['content'].strip()
+			if context_aware > 0:
+				if len(history) > context_aware:
+					history.pop(0)
+				history.append((text, out))
 			if verbose:
 				print(out)
 			return out
@@ -93,7 +102,6 @@ def main(INPUT_LANG: str, OUTPUT_LANG: str, INPUT_FILE: Path|None=None, OUTPUT_F
 		# Append extension if not already present
 		if INPUT_FILE.is_file() and output != "/dev/null" and Path(output).suffix.lower() != INPUT_FILE.suffix.lower():
 			output += INPUT_FILE.suffix.lower()
-
 
 		if not force_overwrite and Path(output).exists():
 			eprint(f"File '{output}' already exists")
@@ -162,7 +170,7 @@ def main(INPUT_LANG: str, OUTPUT_LANG: str, INPUT_FILE: Path|None=None, OUTPUT_F
 	if not quiet:
 		print()
 		print(strftime("%Y-%m-%d %H:%M:%S", localtime()))
-		print("Elapsed time: ", str(datetime.timedelta(seconds=int(time.time() - start_time))))
+		print("Elapsed time:", str(datetime.timedelta(seconds=int(time.time() - start_time))))
 
 	if ki:
 		raise KeyboardInterrupt
@@ -170,12 +178,11 @@ def main(INPUT_LANG: str, OUTPUT_LANG: str, INPUT_FILE: Path|None=None, OUTPUT_F
 	return (ret or "").strip()
 
 if __name__ == '__main__':
-
 	parser_langs = argparse.ArgumentParser(add_help=False)
 	group_list = parser_langs.add_mutually_exclusive_group()
 	group_list.add_argument('-l', '--languages', action='store_const', const=show_langs, dest='list', help="list languages (shorten)")
 	group_list.add_argument('-ll', '--languages-full', action='store_const', const=lambda: show_langs(False), dest='list', help="list languages (full)")
-	group_list.set_defaults(list=lambda: True)
+	group_list.set_defaults(list=lambda:True)
 	args, _unknown = parser_langs.parse_known_args()
 
 	args.list() or sys.exit(0)
@@ -192,15 +199,15 @@ if __name__ == '__main__':
 	parser.add_argument('OUTPUT_LANG', nargs=1, type=validation_lang, help='target language in output file')
 	parser.add_argument('INPUT_FILE', nargs='?', type=lambda x: Path(x).resolve(strict=True), help='file to translate')
 
-
 	group_parser = parser.add_mutually_exclusive_group()
 	group_parser.add_argument('-t', '--text', type=str, dest="TEXT", help="text to translate")
 	group_parser.add_argument('-r', '--recursive', action="store_true", help="translate recursively all supported files in INPUT_FILE")
 
-	parser.add_argument('-o', '--output-file', default=OUTPUT_FILE_DEFAULT, dest="OUTPUT_FILE", type=str,
+	parser.add_argument('-o', '--output-file', default=OUTPUT_FILE_DEFAULT, metavar="FILE", dest="OUTPUT_FILE", type=str,
 						help='Output basename file translated. Possible formats :\n  {n} basename\n  {l} target language\nDefault: %s' % OUTPUT_FILE_DEFAULT)
-	parser.add_argument('-e', '--exclude', type=lambda s: [t.strip() for t in s.split(',')], help="Comma-separated list of words to filter out")
+	parser.add_argument('-e', '--exclude', metavar="WORDS", type=lambda s: [t.strip() for t in s.split(',')], help="Comma-separated list of words to filter out")
 	parser.add_argument('--tag', type=str, default=LLM_MODEL_TAG_DEFAULT, help="model's tag")
+	parser.add_argument('--context-aware', metavar="LENGTH", type=int, default=0, help="Context aware can increase translation accuracy")
 	parser.add_argument('--prompt', choices=["fast", "balance", "accurate"], type=str, default="accurate", help="type of prompt")
 	parser.add_argument('-v', '--verbose', action="store_true", help="show original and translated texts")
 	args = parser.parse_args()
