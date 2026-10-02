@@ -1,10 +1,8 @@
 # Ollama Translate
 
 Translate documents using a local Ollama model.
-
 This tool extracts text from supported files, sends it to a local LLM for translation, and writes the translated content back to a new file.
-
-This tool currently uses Gemma3 for which we observed the best results (speed/accuracy).
+This tool currently uses Gemma3 for which we observed the best results (speed/accuracy) with low VRAM requirements.
 
 ## Features
 
@@ -22,8 +20,13 @@ This tool currently uses Gemma3 for which we observed the best results (speed/ac
 
 ## Requirements
 
+### Softwares
 - Python 3.10+
 - [Ollama](https://ollama.com/download)
+
+### Hardware
+___If locally:___
+- +3GB VRAM
 
 ## Python dependencies
 
