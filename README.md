@@ -2,7 +2,7 @@
 
 Translate documents using a local Ollama model.
 This tool extracts text from supported files, sends it to a local LLM for translation, and writes the translated content back to a new file.
-This tool currently uses Gemma3 for which we observed the best results (speed/accuracy) with low VRAM requirements.
+This tool currently uses Gemma3 for which we observed the best results (speed/accuracy) with low VRAM requirements (if locally, +3GB).
 
 ## Features
 
