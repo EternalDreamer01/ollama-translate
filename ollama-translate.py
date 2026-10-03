@@ -22,7 +22,7 @@ from conf import *
 from format import *
 
 
-def main(INPUT_LANG: str, OUTPUT_LANG: str, INPUT_FILE: Path|None=None, OUTPUT_FILE: str|None=None, TEXT: str|None=None, recursive: bool=False, exclude: list[str]=[], exclude_in_prompt: list[str]=[], tag: str=LLM_MODEL_TAG_DEFAULT, prompt: str="accurate", force_overwrite: bool=False, quiet: bool=False, context_aware: int=0, verbose: bool=False):
+def main(INPUT_LANG: str, OUTPUT_LANG: str, INPUT_FILE: Path|None=None, OUTPUT_FILE: str|None=None, TEXT: str|None=None, recursive: bool=False, exclude: list[str]=[], exclude_in_prompt: list[str]=[], tag: str=LLM_MODEL_TAG_DEFAULT, prompt: str="accurate", force_overwrite: bool=False, quiet: bool=False, context_aware: int=0, verbose: bool=False, api_key: str|None=None, host: str|None=None):
 	try:
 		if (INPUT_FILE is None) and (TEXT is None):
 			raise argparse.ArgumentError(None, "INPUT_FILE or -t/--text required")
@@ -31,7 +31,14 @@ def main(INPUT_LANG: str, OUTPUT_LANG: str, INPUT_FILE: Path|None=None, OUTPUT_F
 		if INPUT_LANG == OUTPUT_LANG:
 			raise argparse.ArgumentError(None, "INPUT_LANG is the same as OUTPUT_LANG")
 
-		pull_model(f"{LLM_MODEL}:{tag}")
+		if api_key and not host:
+			host = "https://ollama.com"
+		if host:
+			headers = {"Authorization": "Bearer " + api_key} if api_key else None
+			client = ollama.Client(host=host, headers=headers)
+		else:
+			client = ollama
+			pull_model(f"{LLM_MODEL}:{tag}")
 
 		prompt_type = "accurate_any" if INPUT_LANG in LANGUAGE_AGNOSTIC else prompt
 
@@ -72,7 +79,7 @@ def main(INPUT_LANG: str, OUTPUT_LANG: str, INPUT_FILE: Path|None=None, OUTPUT_F
 				{"role": "system", "content": system_prompt},
 				{"role": "user", "content": text}
 			]
-			response = ollama.chat(
+			response = client.chat(
 				model=f"{LLM_MODEL}:{tag}",
 				messages=messages
 			)
@@ -217,6 +224,8 @@ if __name__ == '__main__':
 	parser.add_argument('--tag', type=str, default=LLM_MODEL_TAG_DEFAULT, help="model's tag")
 	parser.add_argument('--context-aware', metavar="LENGTH", type=int, default=0, help="Context aware can increase translation accuracy")
 	parser.add_argument('--prompt', choices=["fast", "balance", "accurate"], type=str, default="accurate", help="type of prompt")
+	parser.add_argument('--api-key', default=os.environ.get("OLLAMA_API_KEY"), metavar="KEY", help="Ollama Cloud API key (default: $OLLAMA_API_KEY); uses https://ollama.com unless --host is given")
+	parser.add_argument('--host', type=str, default=None, help="Ollama server URL (default: local)")
 	parser.add_argument('-v', '--verbose', action="store_true", help="show original and translated texts")
 	args = parser.parse_args()
 

@@ -56,6 +56,13 @@ List available languages:
 ./ot.py -ll	# Full
 ```
 
+## Ollama Cloud
+
+```sh
+./ot.py --api-key YOUR_KEY en es document.docx	# or set OLLAMA_API_KEY
+./ot.py --host http://remote:11434 en es document.docx
+```
+
 ## Advanced usage
 
 ### Verbose
